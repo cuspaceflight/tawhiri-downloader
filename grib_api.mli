@@ -2,5 +2,10 @@ open Core.Std
 open Async.Std
 
 type t
+
 val of_bigstring : Bigstring.t -> t Or_error.t
-val of_data_pipe : total_len:int -> string Pipe.Reader.t -> t Or_error.t Deferred.t
+
+val variable : t -> [ `height | `u_wind | `v_wind ] Or_error.t
+val hour : t -> int Or_error.t
+val level : t -> int Or_error.t
+val layout : t -> [ `half_deg ] Or_error.t

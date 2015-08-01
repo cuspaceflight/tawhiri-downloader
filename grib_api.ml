@@ -93,29 +93,6 @@ type t = F.grib_handle_and_data
 
 let of_bigstring = F.grib_handle_new_from_message
 
-let of_data_pipe ~total_len p =
-  Log.Global.info "Reading data pipe into buffer len %i" total_len;
-  let bigstring = Bigstring.create total_len in
-  let iobuf = Iobuf.of_bigstring bigstring in
-  let rec load_loop () =
-    Pipe.read p >>= fun src ->
-    match src with
-    | `Eof ->
-      if Iobuf.is_empty iobuf
-      then return (Ok ())
-      else return (Error (Error.of_string "unexpected EOF"))
-    | `Ok src ->
-      if Iobuf.length iobuf < String.length src
-      then return (Error (Error.of_string "too much data in pipe"))
-      else begin
-        Iobuf.Fill.string iobuf src;
-        Log.Global.info "Got %i" (total_len - Iobuf.length iobuf);
-        load_loop ()
-      end
-  in
-  load_loop () >>=? fun () ->
-  return (of_bigstring bigstring)
-
 let variable t =
   let open Result.Monad_infix in
   let g = F.grib_get_int t in
@@ -174,44 +151,3 @@ let level t =
   | (100, 0, n, m) when n = m * 100 -> Ok m
   | (a, b, c, d) ->
     Error (Error.of_string (sprintf "couldn't identify level %i %i %i %i" a b c d))
-
-let test =
-  let (url, offset, length) =
-    ( "http://ftp.ncep.noaa.gov/data/nccf/com/gfs/prod/gfs.2015080106/gfs.t06z.pgrb2b.0p50.f159"
-    , 6364853
-    , 6496803 - 6364853
-    )
-  in
-  let open Cohttp in
-  let open Cohttp_async in
-  let range_header = sprintf "bytes=%i-%i" offset (offset + length - 1) in
-  Log.Global.info !"Sending request %s (expecting %i bytes)" range_header length;
-  Client.get (Uri.of_string url) ~headers:(Header.init_with "range" range_header)
-  >>= fun (resp, body) ->
-  Log.Global.info !"Response %{sexp:Response.t}" resp;
-  begin
-    match Response.status resp with
-    | #Code.success_status ->
-      return (Ok ())
-    | other ->
-      return (Error (Error.create "HTTP response" other Code.sexp_of_status_code))
-  end
-  >>=? fun () ->
-  of_data_pipe ~total_len:length (Body.to_pipe body)
-  >>=? fun handle ->
-  return (
-    let open Result.Monad_infix in
-    variable handle >>= fun variable ->
-    layout handle >>= fun `half_deg ->
-    level handle >>= fun level ->
-    hour handle >>| fun hour ->
-    (variable, hour, level)
-  )
-
-let _ = Thread_safe.block_on_async_exn (fun () ->
-  test 
-  >>| Or_error.ok_exn
-  >>= fun (variable, hour, level) ->
-  Log.Global.info !"got %{Sexp} %i %i" (<:sexp_of< [`height|`u_wind|`v_wind] >> variable) hour level;
-  Log.Global.flushed ()
-)
