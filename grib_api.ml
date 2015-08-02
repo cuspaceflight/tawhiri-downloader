@@ -1,5 +1,6 @@
 open Core.Std
 open Async.Std
+open Common
 
 module F : sig
   type grib_handle_and_data
@@ -100,9 +101,9 @@ let variable t =
   g "parameterCategory" >>= fun b ->
   g "parameterNumber" >>= fun c ->
   match (a, b, c) with
-  | (0, 3, 5) -> Ok `height
-  | (0, 2, 2) -> Ok `u_wind
-  | (0, 2, 3) -> Ok `v_wind
+  | (0, 3, 5) -> Ok Variable.Height
+  | (0, 2, 2) -> Ok Variable.U_wind
+  | (0, 2, 3) -> Ok Variable.V_wind
   | (a, b, c) -> Error (Error.of_string (sprintf "couldn't identify variable %i %i %i" a b c))
 
 let layout t =
@@ -121,7 +122,8 @@ let layout t =
   gd "jDirectionIncrementInDegrees" >>= fun j ->
   gi "numberOfValues" >>= fun k ->
   match (a, b, c, d, e, f, g, h, i, j, k) with
-  | (0, 0, 720, 361, 90., 0., -90., 359.5, 0.5, 0.5, 259920) -> Ok `half_deg
+  | (0, 0, 720, 361, 90., 0., -90., 359.5, 0.5, 0.5, 259920) ->
+    Ok Layout.Half_deg
   | (a, b, c, d, e, f, g, h, i, j, k) ->
     Error (
       Error.of_string (
@@ -148,6 +150,7 @@ let level t =
   gi "scaledValueOfFirstFixedSurface" >>= fun c ->
   gi "level" >>= fun d ->
   match (a, b, c, d) with
-  | (100, 0, n, m) when n = m * 100 -> Ok m
+  | (100, 0, n, m) when n = m * 100 ->
+    Ok (Level.Mb m)
   | (a, b, c, d) ->
     Error (Error.of_string (sprintf "couldn't identify level %i %i %i %i" a b c d))
