@@ -45,7 +45,7 @@ let test () =
   >>|?| Bigstring.to_string
   >>|?= Grib_index.parse
   >>=?= fun messages ->
-  Deferred.List.map messages ~how:`Sequential ~f:(fun msg ->
+  Deferred.List.map messages ~how:`Parallel ~f:(fun msg ->
     let { Grib_index.offset; length; forecast; variable; level; hour } = msg in
     throttled_download
       (Uri.of_string uri_prefix)

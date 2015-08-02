@@ -22,7 +22,13 @@ end = struct
   type grib_handle_and_data = grib_handle * Bigstring.t
 
   let grib_get_error_message =
-    foreign "grib_get_error_message" (int @-> returning string)
+    let f =
+      foreign "grib_get_error_message" (int @-> returning string_opt)
+    in
+    fun c ->
+      match f c with
+      | None -> sprintf "unknown grib error %i" c
+      | Some s -> s
 
   let grib_check =
     function
@@ -44,15 +50,14 @@ end = struct
     in
     let finaliser (handle, _bs) =
       match grib_handle_delete handle with
-      | 0 -> Log.Global.info "grib_handle_new_from_message finalised"
-      | e -> Log.Global.error "grib_handle_new_from_message error finalising %i" e
+      | 0 -> ()
+      | e -> Log.Global.error "grib_handle_new_from_message error finalising %s" (grib_get_error_message e)
     in
     fun bigstr ->
       let data = array_of_bigarray array1 bigstr in
       match f None (CArray.start data) (Unsigned.Size_t.of_int (CArray.length data)) with
       | None -> Error (Error.of_string "grib_handle_new_from_message")
       | Some handle ->
-        Log.Global.info "grib_handle_new_from_message attaching finaliser";
         let t = (handle, bigstr) in
         Gc.minor ();
         Gc.Expert.add_finalizer_exn t finaliser;
