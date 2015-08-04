@@ -1,5 +1,4 @@
 open Core.Std
-open Async.Std
 open Common
 
 module F : sig
@@ -33,7 +32,7 @@ end = struct
   let grib_check =
     function
     | 0 -> Ok ()
-    | error_code -> Error (Error.of_string (grib_get_error_message error_code))
+    | error_code -> Or_error.error_string (grib_get_error_message error_code)
 
   let grib_check_exn x = Or_error.ok_exn (grib_check x)
 
@@ -56,7 +55,7 @@ end = struct
     fun bigstr ->
       let data = array_of_bigarray array1 bigstr in
       match f None (CArray.start data) (Unsigned.Size_t.of_int (CArray.length data)) with
-      | None -> Error (Error.of_string "grib_handle_new_from_message")
+      | None -> Or_error.of_string "grib_handle_new_from_message"
       | Some handle ->
         let t = (handle, bigstr) in
         Gc.minor ();
@@ -109,7 +108,7 @@ let variable t =
   | (0, 3, 5) -> Ok Variable.Height
   | (0, 2, 2) -> Ok Variable.U_wind
   | (0, 2, 3) -> Ok Variable.V_wind
-  | (a, b, c) -> Error (Error.of_string (sprintf "couldn't identify variable %i %i %i" a b c))
+  | (a, b, c) -> Or_error.errorf "couldn't identify variable %i %i %i" a b c
 
 let layout t =
   let open Result.Monad_infix in
@@ -130,13 +129,9 @@ let layout t =
   | (0, 0, 720, 361, 90., 0., -90., 359.5, 0.5, 0.5, 259920) ->
     Ok Layout.Half_deg
   | (a, b, c, d, e, f, g, h, i, j, k) ->
-    Error (
-      Error.of_string (
-        sprintf
-          "couldn't identify layout %i %i %i %i %f %f %f %f %f %f %i"
-          a b c d e f g h i j k
-      )
-    )
+    Or_error.errorf
+      "couldn't identify layout %i %i %i %i %f %f %f %f %f %f %i"
+      a b c d e f g h i j k
 
 let hour t =
   let open Result.Monad_infix in
@@ -145,7 +140,7 @@ let hour t =
   gi "forecastTime" >>= fun b ->
   match (a, b) with
   | (1, n) when 0 <= n && n <= 192 && n mod 3 = 0 -> Ok n
-  | (a, b) -> Error (Error.of_string (sprintf "couldn't identify hour %i %i" a b))
+  | (a, b) -> Or_error.errorf "couldn't identify hour %i %i" a b
 
 let level t =
   let open Result.Monad_infix in
@@ -158,4 +153,4 @@ let level t =
   | (100, 0, n, m) when n = m * 100 ->
     Ok (Level.Mb m)
   | (a, b, c, d) ->
-    Error (Error.of_string (sprintf "couldn't identify level %i %i %i %i" a b c d))
+    Or_error.errorf "couldn't identify level %i %i %i %i" a b c d

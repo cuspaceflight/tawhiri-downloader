@@ -33,7 +33,7 @@ let throttled_download =
   let throttle = Throttle.create ~continue_on_error:true ~max_concurrent_jobs:5 in
   fun uri ~timeout ~progress ~range ->
     Throttle.enqueue throttle (fun () ->
-      Download.get uri ~timeout ~progress ~range
+      Http.get uri ~timeout ~progress ~range
     )
 
 let test () =
@@ -66,7 +66,7 @@ let test () =
       Log.Global.info !"Got %{Variable} %{Level} %i" variable level hour;
       Ok (variable, level, hour)
     end
-    else Error (Error.of_string "index/message mismatch")
+    else Or_error.error_string "index/message mismatch"
   )
   >>| Or_error.combine_errors
 
