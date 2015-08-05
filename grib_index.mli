@@ -12,4 +12,4 @@ type message =
 
 val parse : string -> message list Or_error.t
 
-val string_of_message : message -> string
+val message_to_string : message -> string

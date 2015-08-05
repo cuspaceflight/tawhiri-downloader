@@ -27,17 +27,6 @@ module Layout = struct
     | Half_deg
 end
 
-module Forecast_time = struct
-  type t = Date.t * [ `h00 | `h06 | `h12 | `h18 ]
-
-  let incr =
-    function
-    | (d, `h00) -> (d, `h06)
-    | (d, `h06) -> (d, `h12)
-    | (d, `h12) -> (d, `h18)
-    | (d, `h18) -> (Date.add_days d 1, `h00)
-end
-
 module Deferred_result_infix = struct
   open Async.Std
 

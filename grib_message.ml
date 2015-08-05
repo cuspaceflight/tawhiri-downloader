@@ -1,12 +1,18 @@
 open Core.Std
 open Common
+module Log = Async.Std.Log
 
 module F : sig
   type grib_handle_and_data
   val grib_handle_new_from_message : Bigstring.t -> grib_handle_and_data Or_error.t
-  val grib_get_long : grib_handle_and_data -> string -> Int64.t Or_error.t
-  val grib_get_int : grib_handle_and_data -> string -> int Or_error.t
+  val grib_get_long   : grib_handle_and_data -> string -> Int64.t Or_error.t
+  val grib_get_int    : grib_handle_and_data -> string -> int Or_error.t
   val grib_get_double : grib_handle_and_data -> string -> float Or_error.t
+  val grib_get_double_array_into
+    :  grib_handle_and_data 
+    -> string 
+    -> (float, Bigarray.float64_elt, Bigarray.c_layout) Bigarray.Array1.t
+    -> unit Or_error.t
 end = struct
   open Ctypes
   open Foreign
@@ -55,7 +61,7 @@ end = struct
     fun bigstr ->
       let data = array_of_bigarray array1 bigstr in
       match f None (CArray.start data) (Unsigned.Size_t.of_int (CArray.length data)) with
-      | None -> Or_error.of_string "grib_handle_new_from_message"
+      | None -> Or_error.error_string "grib_handle_new_from_message"
       | Some handle ->
         let t = (handle, bigstr) in
         Gc.minor ();
@@ -92,6 +98,35 @@ end = struct
       let temp = allocate double 0. in
       grib_check (f handle key temp) >>| fun () ->
       !@ temp
+
+  let grib_get_double_array_into =
+    let f1 = 
+      foreign
+        "grib_get_size"
+        (grib_handle @-> string @-> ptr size_t @-> returning int)
+    in
+    let f2 =
+      foreign
+        "grib_get_double_array"
+        (grib_handle @-> string @-> ptr double @-> ptr size_t @-> returning int)
+    in
+    let check_size_match got ~expect =
+      if got = Unsigned.Size_t.of_int expect
+      then Ok ()
+      else Or_error.errorf !"Size mismatch: got %{Unsigned.Size_t} expected %i" got expect
+    in
+    fun (handle, _) key target ->
+      let open Result.Monad_infix in
+      let len_temp = allocate size_t Unsigned.Size_t.zero in
+      grib_check (f1 handle key len_temp) >>= fun () ->
+      let len_expect = Bigarray.Array1.dim target in
+      check_size_match (!@ len_temp) ~expect:len_expect >>= fun () ->
+      let vals = array_of_bigarray array1 target in
+      assert (CArray.length vals = len_expect);
+      let len_temp = allocate size_t (Unsigned.Size_t.of_int len_expect) in
+      grib_check (f2 handle key (CArray.start vals) len_temp) >>= fun () ->
+      check_size_match (!@ len_temp) ~expect:len_expect >>= fun () ->
+      Ok ()
 end
 
 type t = F.grib_handle_and_data
@@ -154,3 +189,26 @@ let level t =
     Ok (Level.Mb m)
   | (a, b, c, d) ->
     Or_error.errorf "couldn't identify level %i %i %i %i" a b c d
+
+(* Take care around threads. *)
+let with_temp_array = 
+  let mutex = Mutex.create () in
+  let arr = Bigarray.(Array1.create Float64 C_layout (720 * 361)) in
+  fun f ->
+    Mutex.lock mutex;
+    let res = f arr in
+    Mutex.unlock mutex;
+    res
+
+let blit t dst ~dst_pos =
+  let open Result.Monad_infix in
+  layout t >>= fun Layout.Half_deg ->
+  with_temp_array (fun temp ->
+    F.grib_get_double_array_into t "values" temp >>| fun () ->
+    for lat = 0 to 361 - 1 do
+      for lon = 0 to 720 - 1 do
+        let v = Bigarray.Array1.get temp (lon * 361 + lat) in
+        Bigarray.Array1.set dst (dst_pos + lat * 720 + lon) v
+      done
+    done
+  )

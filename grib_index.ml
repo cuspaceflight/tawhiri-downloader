@@ -19,7 +19,7 @@ type message =
   ; hour : int
   }
 
-let message_of_string { offset; length; fcst_time; variable; level; hour } =
+let message_to_string { offset; length; fcst_time; variable; level; hour } =
   sprintf
     !"%{Forecast_time} %{Variable} %{Level} %i (%i;%i)"
     fcst_time variable level hour offset length
@@ -93,7 +93,7 @@ let parse_idx_offset =
     int_of_string idx >>= fun idx ->
     int_of_string offset >>= fun offset ->
     Ok (idx, offset)
-  | _ -> Or_error.of_string "malformed line"
+  | _ -> Or_error.error_string "malformed line"
 
 let parse index =
   let open Result.Monad_infix in
