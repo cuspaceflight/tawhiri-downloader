@@ -95,7 +95,15 @@ let cmd =
     ~summary:"Download a dataset"
     Command.Spec.(
       let forecast_time = Arg_type.create (fun s -> Or_error.ok_exn (Forecast_time.of_string_tawhiri s)) in
-      let log_level = Arg_type.create Log.Level.of_string in
+      let log_level =
+        Arg_type.create (fun s ->
+          match String.lowercase s with
+          | "info" -> `Info
+          | "debug" -> `Debug
+          | "error" -> `Error
+          | _ -> failwithf "Invalid log level %s, choose info debug or error" s ()
+        )
+      in
       empty
       ++ step (fun m directory -> m ?directory)
       +> flag "directory" (optional file) ~doc:"DIR (optional) directory in which to place the dataset"
