@@ -5,8 +5,8 @@ open Common
 val get_index
   :  interrupt:unit Deferred.t 
   -> Forecast_time.t
-  -> [ `pgrb2 | `pgrb2b ]
-  -> hour:int
+  -> Level_set.t
+  -> Hour.t
   -> Grib_index.message list Or_error.t Deferred.t
 
 val get_message

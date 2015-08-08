@@ -7,7 +7,7 @@ type line =
   ; fcst_time : Forecast_time.t
   ; variable : Variable.t
   ; level : Level.t
-  ; hour : int
+  ; hour : Hour.t
   }
 
 type message =
@@ -16,12 +16,12 @@ type message =
   ; fcst_time : Forecast_time.t
   ; variable : Variable.t
   ; level : Level.t
-  ; hour : int
+  ; hour : Hour.t
   }
 
 let message_to_string { offset; length; fcst_time; variable; level; hour } =
   sprintf
-    !"%{Forecast_time} %{Variable} %{Level} %i (%i;%i)"
+    !"%{Forecast_time} %{Variable} %{Level} %{Hour} (%i;%i)"
     fcst_time variable level hour offset length
 
 let drop_suffix ~suffix s =
@@ -41,36 +41,22 @@ let parse_variable =
 let parse_hour =
   let open Result.Monad_infix in
   function
-  | "anl" -> Ok 0
+  | "anl" -> Hour.of_int 0
   | hour ->
-    drop_suffix hour ~suffix:" hour fcst" >>= fun hour ->
-    int_of_string hour >>= fun hour ->
-    if hour mod 3 = 0
-    then Ok hour
-    else Or_error.errorf "hour %i" hour
+    drop_suffix hour ~suffix:" hour fcst"
+    >>= int_of_string
+    >>= Hour.of_int
 
 let parse_fcst_time s =
-  if String.length s <> 12
-  then Or_error.error_string "fcst time length"
-  else
-    Or_error.try_with (fun () ->
-      let date = Date.of_string (String.sub s ~pos:2 ~len:8) in
-      let hour =
-        match String.sub s ~pos:10 ~len:2 with
-        | "00" -> `h00
-        | "06" -> `h06
-        | "12" -> `h12
-        | "18" -> `h18
-        | _ -> failwith "hour"
-      in
-      (date, hour)
-    )
+  if not (String.is_prefix s ~prefix:"d=")
+  then Or_error.error_string "fcst time prefix"
+  else Forecast_time.of_string_noaa (String.subo s ~pos:2)
 
 let parse_level s =
   let open Result.Monad_infix in
   drop_suffix ~suffix:" mb" s
   >>= int_of_string
-  >>| (fun x -> Level.Mb x)
+  >>= Level.of_mb
 
 (* 15:1207405:d=2015080106:CLWMR:2 mb:159 hour fcst: *)
 let parse_line =
@@ -123,3 +109,4 @@ let parse index =
   String.split_lines index
   |> List.map ~f:(String.split ~on:':')
   |> loop []
+  |> Or_error.map ~f:List.rev

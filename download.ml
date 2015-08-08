@@ -2,82 +2,24 @@ open Core.Std
 open Async.Std
 open Common
 
-module Axes = struct
-  let hours = List.range ~stride:3 ~start:`inclusive ~stop:`inclusive 0 192
-  let levels_pgrb2 = 
-    [ 10; 20; 30; 50; 70; 100; 150; 200; 250; 300; 350; 400
-    ; 450; 500; 550; 600; 650; 700; 750; 800; 850; 900; 925
-    ; 950; 975; 1000
-    ]
-    |> List.map ~f:(fun x -> Level.Mb x)
-  let levels_pgrb2b =
-    [ 1; 2; 3; 5; 7; 125; 175; 225; 275; 325; 375; 425
-    ; 475; 525; 575; 625; 675; 725; 775; 825; 875
-    ]
-    |> List.map ~f:(fun x -> Level.Mb x)
-  let levels =
-    (levels_pgrb2 @ levels_pgrb2b)
-    |> List.sort ~cmp:(fun (Level.Mb x) (Level.Mb y) -> Int.compare y x)
-  let variables = Variable.([Height; U_wind; V_wind])
-
-  let hour_idx i =
-    if i mod 3 = 0 && 0 <= i && i <= 192
-    then Some (i / 3)
-    else None
-
-  let (level_idx, level_set) =
-    let module Tbl = Hashtbl.Make(struct
-      include Level
-      let compare (Mb x) (Mb y) = Int.compare y x
-      let hash (Mb x) = Int.hash x
-    end) in
-    let idx_table =
-      List.mapi levels ~f:(fun idx level -> (level, idx))
-      |> Tbl.of_alist_exn
-    in
-    let set_table =
-      (   List.map levels_pgrb2 ~f:(fun l -> (l, `pgrb2))
-        @ List.map levels_pgrb2b ~f:(fun l -> (l, `pgrb2b))  )
-      |> Tbl.of_alist_exn
-    in
-    (Tbl.find idx_table, Tbl.find set_table)
-
-  let variable_idx : Variable.t -> int =
-    function
-    | Height -> 0
-    | U_wind -> 1
-    | V_wind -> 2
-
-  let () = List.iteri hours ~f:(fun idx hour -> assert (hour_idx hour = Some idx))
-  let () = List.iteri levels ~f:(fun idx level -> assert (level_idx level = Some idx))
-  let () = List.iteri variables ~f:(fun idx var -> assert (variable_idx var = idx))
-end
-
 module Urls = struct
-  let base_url = "http://www.nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod/"
-  let string_of_fcst_hour =
-    function
-    | `h00 -> "00"
-    | `h06 -> "06"
-    | `h12 -> "12"
-    | `h18 -> "18"
-  let forecast_dir (date, hr) =
-    base_url ^ Date.format date "gfs.%Y%m%d/" ^ string_of_fcst_hour hr
+  let base_url = "http://www.nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod"
+  let forecast_dir = sprintf !"%s/gfs.%{Forecast_time.to_string_noaa}/" base_url
 
-  let grib_file fcst_time levels ~hour =
-    let fcst_hr = string_of_fcst_hour (snd fcst_time) in
+  let grib_file fcst_time levels hour =
+    let fcst_hr = Forecast_time.hour_int fcst_time in
     let maybe_b =
-      match levels with
-      | `pgrb2 -> ""
-      | `pgrb2b -> "b"
+      match (levels : Level_set.t) with
+      | A -> ""
+      | B -> "b"
     in
-    forecast_dir fcst_time ^ sprintf "gfs.t%sz.pgrb2%s.0p50.f%03i" fcst_hr maybe_b hour
+    forecast_dir fcst_time ^ sprintf "gfs.t%02iz.pgrb2%s.0p50.f%03i" fcst_hr maybe_b (Hour.to_int hour)
 
-  let index_file fcst_time levels ~hour =
-    grib_file fcst_time levels ~hour ^ ".idx"
+  let index_file fcst_time levels hour =
+    grib_file fcst_time levels hour ^ ".idx"
 
-  let index_file fcst_time levels ~hour = Uri.of_string (index_file fcst_time levels ~hour)
-  let grib_file  fcst_time levels ~hour = Uri.of_string (grib_file  fcst_time levels ~hour)
+  let index_file fcst_time levels hour = Uri.of_string (index_file fcst_time levels hour)
+  let grib_file  fcst_time levels hour = Uri.of_string (grib_file  fcst_time levels hour)
 end
 
 let throttled_get =
@@ -110,6 +52,7 @@ let with_retries ~name ~f ~attempt_timeout ~interrupt =
     in
     match res with
     | `Res (Ok res) ->
+      Log.Global.debug "%s OK" name;
       return (Ok res)
     | `Res (Error err) ->
       Log.Global.debug !"%s %{Error#mach} (backoff %{Time.Span})" name err backoff;
@@ -123,85 +66,81 @@ let with_retries ~name ~f ~attempt_timeout ~interrupt =
   loop ~backoff:(Time.Span.of_sec 5.)
 
 let check_index_has_all_messages =
-  let module M = Map.Make(struct
-    type t = Variable.t * Level.t with sexp, compare
-  end) in
-  let module S = Set.Make(struct
-    type t = Variable.t * Level.t with sexp, compare
-  end) in
-  let expect_vl_a =
-    List.cartesian_product Axes.variables Axes.levels_pgrb2
-    |> S.of_list
-  in
-  let expect_vl_b =
-    List.cartesian_product Axes.variables Axes.levels_pgrb2b
-    |> S.of_list
-  in
-  let expect_vl =
+  let expect_count =
+    let f ls = (List.length Variable.axis) * (List.length (Level.ts_in ls)) in
+    let a = f Level_set.A in
+    let b = f Level_set.B in
     function
-    | `pgrb2  -> expect_vl_a
-    | `pgrb2b -> expect_vl_b
+    | Level_set.A -> a
+    | Level_set.B -> b
   in
-  fun messages ~expect_levels ~expect_hour ~expect_fcst_time ->
-    let open Result.Monad_infix in
-    let expect_vl = expect_vl expect_levels in
-    let rec loop messages present =
-      match messages with
-      | [] -> Ok present
-      | msg:: messages ->
-        let { Grib_index.offset = _; length = _; fcst_time; variable; level; hour } = msg in
-        let key = (variable, level) in
-        if fcst_time <> expect_fcst_time || hour <> expect_hour
-        then
-          Or_error.errorf
-            !"Index (fcst time, hour) = (%{Forecast_time}, %i); expected (%{Forecast_time}, %i)"
-            fcst_time hour expect_fcst_time expect_hour
-        else if M.mem present key
-        then
-          Or_error.errorf !"Duplicate message in index (%{Variable}, %{Level})" variable level
-        else if not (S.mem expect_vl key)
-        then
-          loop messages present
-        else
-          loop messages (M.add present ~key ~data:msg)
+  let contains_dup =
+    let open Grib_index in
+    let compare a b =
+      <:compare< Variable.t * Level.t >>
+        (a.variable, a.level)
+        (b.variable, b.level)
     in
-    loop messages M.empty >>= fun present ->
-    if M.length present <> S.length expect_vl
-    then Ok (M.data present)
-    else Or_error.error_string "Messages missing from index"
+    List.contains_dup ~compare
+  in
+  fun messages ~level_set ~expect_hour ~expect_fcst_time ->
+    let open Result.Monad_infix in
+    let rec check_subset =
+      function
+      | [] -> Ok ()
+      | msg :: messages ->
+        let { Grib_index.offset = _; length = _; fcst_time; variable = _; level; hour } = msg in
+        if fcst_time <> expect_fcst_time || hour <> expect_hour || Level.level_set level <> level_set
+        then
+          Or_error.errorf !"unexpected message %{Grib_index.message_to_string}" msg
+        else
+          check_subset messages
+    in
+    check_subset messages >>= fun () ->
+    if contains_dup messages
+    then Or_error.error_string "Duplicate messages in index"
+    else begin
+      let count = List.length messages in
+      assert (count <= expect_count level_set);
+      if count <> expect_count level_set
+      then Or_error.error_string "Messages missing from index"
+      else Ok ()
+    end
 
-let get_index ~interrupt fcst_time levels ~hour =
+let get_index ~interrupt fcst_time level_set hour =
   with_retries
     ~name:(
       sprintf
-        !"IDX %{Forecast_time} %{sexp:[`pgrb2|`pgrb2b]} %i"
-        fcst_time levels hour
+        !"Download index %{Forecast_time} %{Level_set} %{Hour}"
+        fcst_time level_set hour
     )
     ~interrupt ~attempt_timeout:(Time.Span.of_sec 10.)
     ~f:(fun ~interrupt () ->
       let open Deferred_result_infix in
       throttled_get
-        (Urls.index_file fcst_time levels ~hour)
+        (Urls.index_file fcst_time level_set hour)
         ~range:(`all_with_max_len (32 * 1024))
         ~interrupt
       >>|?| Bigstring.to_string
       >>|?= Grib_index.parse
-      >>|?=
-        check_index_has_all_messages 
-          ~expect_levels:levels
-          ~expect_fcst_time:fcst_time
-          ~expect_hour:hour
+      >>|?= fun messages ->
+      check_index_has_all_messages 
+        messages
+        ~level_set
+        ~expect_fcst_time:fcst_time
+        ~expect_hour:hour
+      >>-?| fun () ->
+      messages
     )
 
 let get_message ~interrupt (msg : Grib_index.message) =
   with_retries
-    ~name:(Grib_index.message_to_string msg)
+    ~name:("Download message " ^ Grib_index.message_to_string msg)
     ~interrupt ~attempt_timeout:(Time.Span.of_sec 60.)
     ~f:(fun ~interrupt () ->
       let open Deferred_result_infix in
-      let level_set = Option.value_exn (Axes.level_set msg.level) in
       throttled_get
-        (Urls.grib_file msg.fcst_time level_set ~hour:msg.hour)
+        (Urls.grib_file msg.fcst_time (Level.level_set msg.level) msg.hour)
         ~range:(`exactly_pos_len (msg.offset, msg.length))
         ~interrupt
       >>|?= Grib_message.of_bigstring

@@ -174,7 +174,7 @@ let hour t =
   gi "stepUnits" >>= fun a ->
   gi "forecastTime" >>= fun b ->
   match (a, b) with
-  | (1, n) when 0 <= n && n <= 192 && n mod 3 = 0 -> Ok n
+  | (1, n) -> Hour.of_int n
   | (a, b) -> Or_error.errorf "couldn't identify hour %i %i" a b
 
 let level t =
@@ -186,7 +186,7 @@ let level t =
   gi "level" >>= fun d ->
   match (a, b, c, d) with
   | (100, 0, n, m) when n = m * 100 ->
-    Ok (Level.Mb m)
+    Level.of_mb m
   | (a, b, c, d) ->
     Or_error.errorf "couldn't identify level %i %i %i %i" a b c d
 
@@ -196,19 +196,28 @@ let with_temp_array =
   let arr = Bigarray.(Array1.create Float64 C_layout (720 * 361)) in
   fun f ->
     Mutex.lock mutex;
-    let res = f arr in
-    Mutex.unlock mutex;
-    res
+    protectx
+      ~f arr
+      ~finally:(fun _ -> Mutex.unlock mutex)
 
-let blit t dst ~dst_pos =
+let blit =
+  let module B = Bigarray in
+  let module B2 = Bigarray.Array2 in
   let open Result.Monad_infix in
-  layout t >>= fun Layout.Half_deg ->
-  with_temp_array (fun temp ->
-    F.grib_get_double_array_into t "values" temp >>| fun () ->
-    for lat = 0 to 361 - 1 do
-      for lon = 0 to 720 - 1 do
-        let v = Bigarray.Array1.get temp (lon * 361 + lat) in
-        Bigarray.Array1.set dst (dst_pos + lat * 720 + lon) v
+  let check_dims dst =
+    if B2.dim1 dst = 361 && B2.dim2 dst = 720
+    then Ok ()
+    else Or_error.error_string "Output array has bad dims"
+  in
+  fun t (dst : (float, B.float32_elt, B.c_layout) B2.t) ->
+    check_dims dst >>= fun () ->
+    layout t >>= fun Layout.Half_deg ->
+    with_temp_array (fun temp ->
+      F.grib_get_double_array_into t "values" temp >>| fun () ->
+      for lat = 0 to 361 - 1 do
+        for lon = 0 to 720 - 1 do
+          let v = Bigarray.Array1.get temp ((360 - lat) * 720 + lon) in
+          B2.set dst lat lon v
+        done
       done
-    done
-  )
+    )

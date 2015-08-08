@@ -5,4 +5,4 @@ corebuild \
     -pkg custom_printf.syntax \
     -pkg pa_pipebang \
     -lflags -cclib,-lgrib_api \
-    test.native 
+    main.native 

@@ -7,7 +7,7 @@ type message =
   ; fcst_time : Forecast_time.t
   ; variable : Variable.t
   ; level : Level.t
-  ; hour : int 
+  ; hour : Hour.t
   }
 
 val parse : string -> message list Or_error.t
