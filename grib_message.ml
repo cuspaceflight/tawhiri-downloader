@@ -107,6 +107,7 @@ end = struct
     in
     let f2 =
       foreign
+        ~release_runtime_lock:true
         "grib_get_double_array"
         (grib_handle @-> string @-> ptr double @-> ptr size_t @-> returning int)
     in

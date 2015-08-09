@@ -14,26 +14,34 @@ let download_all ?directory ~interrupt fcst_time =
     | Some x -> x
     | None -> return (Ok ())
   in
-  let job (hour, level_set) =
+  let message_job ~interrupt msg =
+    Download.get_message ~interrupt msg
+    >>=?= fun grib ->
+    let module G = Grib_index in
+    let slice = Dataset_file.slice ds msg.G.hour msg.G.level msg.G.variable in
+    In_thread.run (fun () -> Grib_message.blit grib slice)
+    >>|?| fun () ->
+    Log.Global.debug !"Blitted %{Grib_index.message_to_string}" msg
+  in
+  let index_job (hour, level_set) =
     let interrupt_this = Ivar.create () in
     upon interrupt (fun () -> Ivar.fill_if_empty interrupt_this ());
     let interrupt = Ivar.read interrupt_this in
     Download.get_index ~interrupt fcst_time level_set hour
     >>=?= fun messages ->
-    let results =
-      List.map messages ~f:(fun msg ->
-        Download.get_message ~interrupt msg
-        >>|?= fun grib ->
-        let module G = Grib_index in
-        let slice = Dataset_file.slice ds msg.G.hour msg.G.level msg.G.variable in
-        Grib_message.blit grib slice
-        >>-?| fun () ->
-        Log.Global.debug !"Blitted %{Grib_index.message_to_string}" msg
-      )
+    let (last, rest) =
+      match List.rev messages with
+      | last :: rest -> (last, List.rev rest)
+      | [] -> assert false
     in
+    (* wait for the last message in the file to complete first, so that
+     * we know the whole file is there. *)
+    message_job ~interrupt last
+    >>=?= fun () ->
+    let rest_results = List.map rest ~f:(message_job ~interrupt) in
     let error_early_warning =
       Deferred.create (fun ivar ->
-        List.iter results ~f:(fun res ->
+        List.iter rest_results ~f:(fun res ->
           res
           >>> function
           | Ok _ -> ()
@@ -42,7 +50,7 @@ let download_all ?directory ~interrupt fcst_time =
       )
     in
     choose
-      [ choice (Deferred.all results) Or_error.combine_errors_unit
+      [ choice (Deferred.all rest_results) Or_error.combine_errors_unit
       ; choice error_early_warning (fun x -> Error x)
       ]
     >>| fun final ->
@@ -60,7 +68,7 @@ let download_all ?directory ~interrupt fcst_time =
     | hour_level_set :: waiting ->
       maybe_wait ongoing1 >>=?= fun () ->
       let ongoing1 = ongoing2 in
-      let ongoing2 = Some (job hour_level_set) in
+      let ongoing2 = Some (index_job hour_level_set) in
       loop ~ongoing1 ~ongoing2 ~waiting
   in
   let jobs =
