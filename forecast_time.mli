@@ -13,3 +13,4 @@ val of_string_noaa : string -> t Or_error.t
 val incr : t -> t
 
 val expect_first_file_at : t -> Time.t
+val expect_next_release : unit -> t

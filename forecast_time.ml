@@ -56,6 +56,26 @@ let of_string_tawhiri = of_string
 let () =
   assert (of_string "1994031418" = Ok (Date.of_string "1994-03-14", `h18))
 
+(* The first file appears at about +3h30, and it's all up by about +4h30 *)
 let expect_first_file_at (date, hour) =
-  let ofday = Time.Ofday.create ~hr:(hour_int' hour + 3) ~min:30 () in
-  Time.of_date_ofday date ofday ~zone:Time.Zone.utc
+  let ofday = Time.Ofday.create ~hr:(hour_int' hour) () in
+  let ds_time = Time.of_date_ofday date ofday ~zone:Time.Zone.utc in
+  Time.add ds_time (Time.Span.of_hr 3.5)
+
+let expect_next_release () =
+  let ds_time = Time.(sub (now ()) (Span.of_hr 4.5)) in
+  let (date, ofday) = Time.to_date_ofday ds_time ~zone:Time.Zone.utc in
+  let hour =
+    Time.Ofday.to_parts ofday
+    |> (fun x -> x.Time.Span.Parts.hr)
+    |> (fun x -> x - (x mod 6))
+  in
+  let hour =
+    match hour with
+    | 0  -> `h00
+    | 6  -> `h06
+    | 12 -> `h12
+    | 18 -> `h18
+    | hour -> failwithf "bad hour after rounding: %i" hour ()
+  in
+  (date, hour)
