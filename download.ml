@@ -29,6 +29,8 @@ let throttled_get =
       Http.get uri ~interrupt ~range
     )
 
+let interrupted_error = return (Or_error.error_string "interrupted")
+
 let with_retries ~name ~f ~attempt_timeout ~interrupt =
   let next_backoff x =
     let open Time.Span in 
@@ -47,8 +49,13 @@ let with_retries ~name ~f ~attempt_timeout ~interrupt =
     >>= fun res ->
     Ivar.fill interrupt_this ();
     let retry () =
-      Clock.after backoff >>= fun () ->
-      loop ~backoff:(next_backoff backoff)
+      choose
+        [ choice (Clock.after backoff) (fun () -> `Ready)
+        ; choice interrupt (fun () -> `Interrupted)
+        ]
+      >>= function
+      | `Ready -> loop ~backoff:(next_backoff backoff)
+      | `Interrupted -> interrupted_error
     in
     match res with
     | `Res (Ok res) ->
@@ -61,7 +68,7 @@ let with_retries ~name ~f ~attempt_timeout ~interrupt =
       Log.Global.debug !"%s Timeout (backoff %{Time.Span})" name backoff;
       retry ()
     | `Interrupted ->
-      return (Or_error.error_string "interrupted")
+      interrupted_error
   in
   loop ~backoff:(Time.Span.of_sec 5.)
 

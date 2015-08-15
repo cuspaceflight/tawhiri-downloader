@@ -4,10 +4,10 @@ open Cohttp
 open Cohttp_async
 open Common
 
-let download_all ?directory ~interrupt fcst_time =
+let download ~interrupt ~filename fcst_time =
   let open Deferred_result_infix in
   Log.Global.debug !"Begin download of %{Forecast_time}" fcst_time;
-  Dataset_file.create ?directory fcst_time RW
+  Dataset_file.create ~filename RW
   >>=?= fun ds ->
   let maybe_wait =
     function
@@ -19,7 +19,7 @@ let download_all ?directory ~interrupt fcst_time =
     >>=?= fun grib ->
     let module G = Grib_index in
     let slice = Dataset_file.slice ds msg.G.hour msg.G.level msg.G.variable in
-    In_thread.run (fun () -> Grib_message.blit grib slice)
+    In_thread.run ~name:"blit" (fun () -> Grib_message.blit grib slice)
     >>|?| fun () ->
     Log.Global.debug !"Blitted %{Grib_index.message_to_string}" msg
   in
@@ -77,7 +77,36 @@ let download_all ?directory ~interrupt fcst_time =
   in
   loop ~ongoing1:None ~ongoing2:None ~waiting:jobs
 
-let main ?directory forecast_time ?log_level () =
+let download_with_temp ~interrupt ?directory forecast_time =
+  let open Deferred_result_infix in
+  let (temp_filename, final_filename) =
+    let open Dataset_file.Filename in
+    ( one ?directory ~prefix:downloader_prefix forecast_time
+    , one ?directory forecast_time
+    )
+  in
+  Log.Global.debug "Temp filename will be %s" temp_filename;
+  begin
+    download ~interrupt ~filename:temp_filename forecast_time
+    >>=?= fun () ->
+    Log.Global.debug "Renaming %s -> %s" temp_filename final_filename;
+    Monitor.try_with_or_error (fun () -> Sys.rename temp_filename final_filename)
+  end
+  >>= function
+  | Ok () ->
+    Log.Global.info "Completed successfully";
+    return (Ok ())
+  | Error _ as dl_err ->
+    Monitor.try_with_or_error (fun () -> Sys.remove temp_filename)
+    >>= fun delete_res ->
+    begin
+      match delete_res with
+      | Ok () -> Log.Global.debug "Deleted %s" temp_filename
+      | Error e -> Log.Global.debug !"Failed to delete temp file %s: %{Error#mach}" temp_filename e
+    end;
+    return dl_err
+
+let one_main ?directory ?log_level forecast_time () =
   Option.iter log_level ~f:Log.Global.set_level;
   let wait_until = Forecast_time.expect_first_file_at forecast_time in
   begin
@@ -94,31 +123,53 @@ let main ?directory forecast_time ?log_level () =
   Log.Global.info !"Deadline at %{Time} (in %{Time.Span})" deadline (Time.diff deadline now);
   let now = `no_longer_now in
   let `no_longer_now = now in
-  let interrupt = Clock.at deadline in
-  download_all ?directory forecast_time ~interrupt
-  >>| Or_error.ok_exn
+  let interrupt =
+    let sigint = Ivar.create () in
+    Signal.handle Signal.([int; term]) ~f:(Ivar.fill_if_empty sigint);
+    choose
+      [ choice (Clock.at deadline) (fun () -> "deadline")
+      ; choice (Ivar.read sigint)  Signal.to_string
+      ]
+    >>= fun reason ->
+    Log.Global.error "Interrupt: %s" reason;
+    Deferred.unit
+  in
+  download_with_temp ~interrupt ?directory forecast_time
+  >>= fun res ->
+  Log.Global.flushed ()
+  >>= fun () ->
+  return (Or_error.ok_exn res)
 
-let cmd = 
+let shared_args =
+  let open Command.Spec in
+  let log_level =
+    Arg_type.create (fun s ->
+      match String.lowercase s with
+      | "info" -> `Info
+      | "debug" -> `Debug
+      | "error" -> `Error
+      | _ -> failwithf "Invalid log level %s, choose info debug or error" s ()
+    )
+  in
+  empty
+  ++ step (fun m directory -> m ?directory)
+  +> flag "directory" (optional file) ~doc:"DIR (optional) directory in which to place the dataset"
+  ++ step (fun m log_level -> m ?log_level)
+  +> flag "log-level" (optional log_level) ~doc:"DEBUG|INFO|ERROR (optional) log level"
+
+let one_cmd = 
   Command.async
-    ~summary:"Download a dataset"
+    ~summary:"Download a specific dataset"
     Command.Spec.(
       let forecast_time = Arg_type.create (fun s -> Or_error.ok_exn (Forecast_time.of_string_tawhiri s)) in
-      let log_level =
-        Arg_type.create (fun s ->
-          match String.lowercase s with
-          | "info" -> `Info
-          | "debug" -> `Debug
-          | "error" -> `Error
-          | _ -> failwithf "Invalid log level %s, choose info debug or error" s ()
-        )
-      in
-      empty
-      ++ step (fun m directory -> m ?directory)
-      +> flag "directory" (optional file) ~doc:"DIR (optional) directory in which to place the dataset"
+      shared_args
       +> anon ("forecast_time" %: forecast_time)
-      ++ step (fun m log_level -> m ?log_level)
-      +> flag "log-level" (optional log_level) ~doc:"DEBUG|INFO|ERROR (optional) log level"
     )
-    main
+    one_main
+
+let cmd =
+  Command.group
+    ~summary:"Tawhiri dataset downloader"
+    [ ("one", one_cmd) ]
 
 let () = Command.run cmd
