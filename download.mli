@@ -13,3 +13,9 @@ val get_message
   :  interrupt:unit Deferred.t
   -> Grib_index.message
   -> Grib_message.t Or_error.t Deferred.t
+
+val download
+  :  interrupt:unit Deferred.t
+  -> ?directory:string
+  -> Forecast_time.t
+  -> unit Or_error.t Deferred.t
