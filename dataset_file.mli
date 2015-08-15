@@ -31,3 +31,5 @@ val slice
   -> Level.t
   -> Variable.t
   -> (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array2.t
+
+val msync : t -> unit Or_error.t Deferred.t

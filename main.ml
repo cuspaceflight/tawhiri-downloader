@@ -76,6 +76,8 @@ let download ~interrupt ~filename fcst_time =
     |> List.sort ~cmp:(fun (h1, _) (h2, _) -> Hour.compare h1 h2)
   in
   loop ~ongoing1:None ~ongoing2:None ~waiting:jobs
+  >>=?= fun () ->
+  Dataset_file.msync ds
 
 let download_with_temp ~interrupt ?directory forecast_time =
   let open Deferred_result_infix in

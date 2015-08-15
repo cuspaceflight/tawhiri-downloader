@@ -45,6 +45,7 @@ end
 
 let shape = (65, 47, 3, 361, 720)
 let shape_arr = let (a, b, c, d, e) = shape in [|a;b;c;d;e|]
+let len_bytes = Array.fold shape_arr ~init:4 ~f:( * )
 
 let () =
   let len = List.length in
@@ -52,6 +53,10 @@ let () =
   assert (len Hour.axis = a);
   assert (len Level.axis = b);
   assert (len Variable.axis = c)
+
+let () =
+  let open Ctypes in
+  assert (sizeof (bigarray genarray shape_arr Bigarray.float32) = len_bytes)
 
 type mode = RO | RW
 
@@ -74,3 +79,30 @@ let create ~filename mode =
 let slice t hour level variable =
   Bigarray.Genarray.slice_left t [|Hour.index hour; Level.index level; Variable.index variable|]
   |> Bigarray.array2_of_genarray
+
+let msync = 
+  let open Ctypes in
+  let open Foreign in
+  let f = 
+    foreign
+      ~release_runtime_lock:true
+      ~check_errno:true
+      "msync"
+      (ptr void @-> size_t @-> int @-> returning int)
+  in
+  let coerce = coerce (ptr float) (ptr void) in
+  fun (t : t) ->
+    let data = coerce (bigarray_start genarray t) in
+    let ms_sync = 4 in
+    In_thread.run ~name:"msync" (fun () ->
+      let start = Time.now () in
+      let r = Or_error.try_with (fun () -> f data (Unsigned.Size_t.of_int len_bytes) ms_sync) in
+      let delta = Time.diff (Time.now ()) start in
+      (r, delta)
+    )
+    >>| fun (r, delta) ->
+    Log.Global.debug !"msync took %{Time.Span} and returned %{sexp:int Or_error.t}" delta r;
+    match r with
+    | Ok 0 -> Ok ()
+    | Ok x -> Or_error.errorf !"msync returned %i yet didn't set errno?" x
+    | Error _ as err -> err
