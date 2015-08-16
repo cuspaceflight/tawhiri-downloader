@@ -23,6 +23,23 @@ let one_main ?directory ?log_level forecast_time () =
   >>= fun () ->
   return (Or_error.ok_exn res)
 
+let clean_directory ?directory ~keep () =
+  let open Deferred_result_infix in
+  begin
+    let open Dataset_file.Filename in
+    list ?directory ~prefix:downloader_prefix ()
+    >>=?= fun temp_files ->
+    list ?directory ()
+    >>|?| fun ds_times ->
+    List.filter ds_times ~f:(fun x -> x.fcst_time <> keep) @ temp_files
+    |> List.map ~f:(fun x -> x.path)
+  end
+  >>=?= fun to_remove ->
+  Deferred.List.map to_remove ~f:(fun path ->
+    Monitor.try_with_or_error (fun () -> Sys.remove path)
+  )
+  >>| Or_error.combine_errors_unit
+
 let daemon_main ?directory ?log_level ?first_fcst_time () =
   Option.iter log_level ~f:Log.Global.set_level;
   let first_fcst_time =
@@ -69,12 +86,18 @@ let daemon_main ?directory ?log_level ?first_fcst_time () =
     | `Deadline ->
       Log.Global.error !"Deadline for %{Forecast_time} reached, skipping" forecast_time;
       continue ()
-    | `Res (Ok ()) ->
-      Log.Global.info !"Completed %{Forecast_time}" forecast_time;
-      continue ()
     | `Res (Error err) ->
       Log.Global.info !"%{Forecast_time} failed: %{Error#mach}" forecast_time err;
       continue ()
+    | `Res (Ok ()) ->
+      Log.Global.info !"Completed %{Forecast_time}" forecast_time;
+      clean_directory ?directory ~keep:forecast_time ()
+      >>= function
+      | Error err as err' -> 
+        Log.Global.error !"Cleanup failed %{Error#mach}" err;
+        return err'
+      | Ok () ->
+        continue ()
   in
   loop first_fcst_time
   >>= fun (res : Nothing.t Or_error.t) ->
