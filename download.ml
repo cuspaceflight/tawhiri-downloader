@@ -254,9 +254,7 @@ let download ~interrupt ?directory forecast_time =
     Monitor.try_with_or_error (fun () -> Sys.rename temp_filename final_filename)
   end
   >>= function
-  | Ok () ->
-    Log.Global.info "Completed successfully";
-    return (Ok ())
+  | Ok () as ok -> return ok
   | Error _ as dl_err ->
     Monitor.try_with_or_error (fun () -> Sys.remove temp_filename)
     >>= fun delete_res ->

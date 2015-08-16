@@ -40,8 +40,30 @@ let clean_directory ?directory ~keep () =
   )
   >>| Or_error.combine_errors_unit
 
-let daemon_main ?directory ?log_level ?first_fcst_time () =
+let (send_mail, wait_for_mails) =
+  let in_flight_mails = Bag.create () in
+  let send_mail ~error_rcpt_to message =
+    match error_rcpt_to with
+    | [] -> ()
+    | error_rcpt_to ->
+      let res = 
+        Smtp.send_mail ~rcpt_to:error_rcpt_to ~subject:"Tawhiri downloader" ~data:message ()
+        >>| function
+        | Error err -> Log.Global.error !"Ignoring failure to email: %{Error#hum}" err
+        | Ok () -> ()
+      in
+      let elt = Bag.add in_flight_mails res in
+      upon res (fun () -> Bag.remove in_flight_mails elt)
+  in
+  let wait_for_mails () =
+    Bag.to_list in_flight_mails
+    |> Deferred.List.iter ~f:Fn.id
+  in
+  (send_mail, wait_for_mails)
+
+let daemon_main ?directory ?log_level ?first_fcst_time ~error_rcpt_to () =
   Option.iter log_level ~f:Log.Global.set_level;
+  let send_mail = send_mail ~error_rcpt_to in
   let first_fcst_time =
     match first_fcst_time with
     | Some x -> x
@@ -51,7 +73,7 @@ let daemon_main ?directory ?log_level ?first_fcst_time () =
     Deferred.create (fun ivar ->
       Signal.handle Signal.([int; term]) ~f:(fun s ->
         let err = Error.of_string (sprintf !"interrupt: %{Signal}" s) in
-        Log.Global.error !"Signal received: %{Signal}" s;
+        Log.Global.info !"Signal received: %{Signal}" s;
         Ivar.fill_if_empty ivar err
       )
     )
@@ -84,10 +106,13 @@ let daemon_main ?directory ?log_level ?first_fcst_time () =
     | `Signal_err e ->
       return (Error e)
     | `Deadline ->
-      Log.Global.error !"Deadline for %{Forecast_time} reached, skipping" forecast_time;
+      let msg = sprintf !"Deadline for %{Forecast_time} reached, skipping" forecast_time in
+      Log.Global.error "%s" msg;
+      send_mail msg;
       continue ()
     | `Res (Error err) ->
-      Log.Global.info !"%{Forecast_time} failed: %{Error#mach}" forecast_time err;
+      Log.Global.error !"%{Forecast_time} failed: %{Error#mach}" forecast_time err;
+      send_mail (sprintf !"%{Forecast_time} failed\n\n%{Error#hum}" forecast_time err);
       continue ()
     | `Res (Ok ()) ->
       Log.Global.info !"Completed %{Forecast_time}" forecast_time;
@@ -104,6 +129,8 @@ let daemon_main ?directory ?log_level ?first_fcst_time () =
   (* Nothing.t: loop will never exit successfully, it runs forever.
    * Perhaps its return type should simply be Error.t Deferred.t
    * Cons: don't get to use >>=? (convenient), don't get to use Nothing.t *)
+  wait_for_mails ()
+  >>= fun () ->
   Log.Global.flushed ()
   >>= fun () ->
   match res with
@@ -147,6 +174,8 @@ let daemon_cmd =
       shared_args ()
       ++ step (fun m first_fcst_time -> m ?first_fcst_time)
       +> flag "first-forecast-time" (optional forecast_time_arg) ~doc:"YYYYMMDDHH first to download"
+      ++ step (fun m error_rcpt_to -> m ~error_rcpt_to)
+      +> flag "error-rcpt-to" (listed string) ~doc:"mail@domain send error notices to this address"
     )
     daemon_main
 
