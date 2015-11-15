@@ -1,0 +1,92 @@
+diff --git a/async/cohttp_async.ml b/async/cohttp_async.ml
+index 42ffeb4..4b00a85 100644
+--- a/async/cohttp_async.ml
++++ b/async/cohttp_async.ml
+@@ -63,25 +63,31 @@ end
+ let pipe_of_body read_chunk ic =
+   let open Cohttp.Transfer in
+   let (rd, wr) = Pipe.create () in
+-  let finished =
+-    Deferred.repeat_until_finished ()
+-      (fun () ->
+-         read_chunk ic
+-         >>= function
+-         | Chunk buf ->
+-           begin
+-             Pipe.write_when_ready wr ~f:(fun wrfn -> wrfn buf)
+-             >>| function
+-             | `Closed -> `Finished ()
+-             | `Ok _ -> `Repeat ()
+-           end
+-         | Final_chunk buf ->
+-           Pipe.write_when_ready wr ~f:(fun wrfn -> wrfn buf)
+-           >>| fun _ -> `Finished ()
+-         | Done -> return (`Finished ())
+-      ) in
+-  don't_wait_for (finished >>| fun () -> Pipe.close wr);
+-  (rd, finished)
++  let monitor = Monitor.create () in
++  let finished = Ivar.create () in
++  upon (Monitor.get_next_error monitor) (fun _ -> Ivar.fill_if_empty finished ());
++  Scheduler.within ~monitor (fun () ->
++    Deferred.repeat_until_finished () (fun () ->
++      read_chunk ic
++      >>= function
++      | Chunk buf ->
++        begin
++          Pipe.write_when_ready wr ~f:(fun wrfn -> wrfn buf)
++          >>| function
++          | `Closed -> `Finished ()
++          | `Ok _ -> `Repeat ()
++        end
++      | Final_chunk buf ->
++        Pipe.write_when_ready wr ~f:(fun wrfn -> wrfn buf)
++        >>| fun _ -> `Finished ()
++      | Done -> return (`Finished ())
++    )
++    >>> fun () ->
++    (* NB: we do /not/ close the pipe if there's an exn *)
++    Pipe.close wr;
++    Ivar.fill_if_empty finished ()
++  );
++  (rd, Ivar.read finished)
+ 
+ module Body = struct
+   module B = Cohttp.Body
+@@ -171,13 +177,29 @@ module Client = struct
+     (* Connect to the remote side *)
+     Net.connect_uri ?interrupt req.Request.uri
+     >>= fun (ic,oc) ->
+-    Request.write (fun writer -> Body.write Request.write_body body writer) req oc
+-    >>= fun () ->
+-    read_request ic >>| fun (resp, body, body_finished) ->
+-    don't_wait_for (
+-      body_finished >>= fun () ->
+-      Deferred.all_ignore [Reader.close ic; Writer.close oc]);
+-    (resp, body)
++    let interrupt =
++      match interrupt with
++      | None -> Deferred.never ()
++      | Some x -> x
++    in
++    let teardown () =
++      don't_wait_for (Reader.close ic);
++      don't_wait_for (Writer.close oc)
++    in
++    upon interrupt teardown;
++    let res =
++      Monitor.try_with (fun () ->
++        Request.write (fun writer -> Body.write Request.write_body body writer) req oc
++        >>= fun () ->
++        read_request ic
++      )
++    in
++    Deferred.any [ res; (interrupt >>| fun () -> Error (Failure "interrupted")) ]
++    >>| function
++    | Error exn -> teardown (); raise exn
++    | Ok (resp, body, body_finished) ->
++      upon body_finished teardown;
++      (resp, body)
+ 
+   let callv ?interrupt uri reqs =
+     let reqs_c = ref 0 in
