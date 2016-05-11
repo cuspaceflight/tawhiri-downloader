@@ -72,7 +72,7 @@ let with_retries ~name ~f ~attempt_timeout ~interrupt =
   in
   loop ~backoff:(Time.Span.of_sec 5.)
 
-let check_index_has_all_messages =
+let filter_messages_and_assert_all_are_present messages =
   let expect_count =
     let f ls = (List.length Variable.axis) * (List.length (Level.ts_in ls)) in
     let a = f Level_set.A in
@@ -92,18 +92,20 @@ let check_index_has_all_messages =
   in
   fun messages ~level_set ~expect_hour ~expect_fcst_time ->
     let open Result.Monad_infix in
-    let rec check_subset =
-      function
-      | [] -> Ok ()
+    let rec filter_messages ~acc ~messages =
+      let unexpected_msg msg = 
+      match messages with
+      | [] -> Ok acc
       | msg :: messages ->
         let { Grib_index.offset = _; length = _; fcst_time; variable = _; level; hour } = msg in
-        if fcst_time <> expect_fcst_time || hour <> expect_hour || Level.level_set level <> level_set
-        then
-          Or_error.errorf !"unexpected message %{Grib_index.message_to_string}" msg
-        else
-          check_subset messages
+        if fcst_time <> expect_fcst_time || hour <> expect_hour
+        then Or_error.errorf !"unexpected message %{Grib_index.message_to_string}" msg
+        else if Level.level_set level = level_set
+        then filter_messages ~acc:(msg :: acc) ~messages
+        else filter_messages ~acc ~messages
     in
-    check_subset messages >>= fun () ->
+    filter_messages ~acc:[] ~messages
+    >>= fun messages ->
     if contains_dup messages
     then Or_error.error_string "Duplicate messages in index"
     else begin
@@ -111,7 +113,7 @@ let check_index_has_all_messages =
       assert (count <= expect_count level_set);
       if count <> expect_count level_set
       then Or_error.error_string "Messages missing from index"
-      else Ok ()
+      else Ok messages
     end
 
 let get_index ~interrupt fcst_time level_set hour =
@@ -131,13 +133,11 @@ let get_index ~interrupt fcst_time level_set hour =
       >>|?| Bigstring.to_string
       >>|?= Grib_index.parse
       >>|?= fun messages ->
-      check_index_has_all_messages 
+      filter_messages_and_assert_all_present
         messages
         ~level_set
         ~expect_fcst_time:fcst_time
         ~expect_hour:hour
-      >>-?| fun () ->
-      messages
     )
 
 let get_message ~interrupt (msg : Grib_index.message) =

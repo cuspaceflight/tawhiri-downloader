@@ -69,10 +69,15 @@ module Level : sig
   val of_mb : int -> t Or_error.t
   val to_mb : t -> int
   val axis : t list
-  val ts_in : Level_set.t -> t list
-  val level_set : t -> Level_set.t
   val index : t -> int
   val to_string : t -> string
+
+  (** For the [t]s that appear in both level sets, we've arbitrarily assigned
+      them to exactly one; [ts_in A] and [ts_in B] partition the levels and
+      you're guaranteed that [List.mem (ts_in (level_set t)) t] and 
+      [List.forall (ts_in ls) ~f:(fun t -> level_set t = ls). *)
+  val ts_in : Level_set.t -> t list
+  val level_set : t -> Level_set.t
 end = struct
   type t = int with sexp
 
@@ -80,6 +85,7 @@ end = struct
   let to_string = sprintf "%i mb"
   let to_mb x = x
 
+  (* 1, 2, 3, 5, 7 appear in both files. We ignore the copies in the A set. *)
   let mbs_pgrb2 = 
     [ 10; 20; 30; 50; 70; 100; 150; 200; 250; 300; 350; 400 
     ; 450; 500; 550; 600; 650; 700; 750; 800; 850; 900; 925 
