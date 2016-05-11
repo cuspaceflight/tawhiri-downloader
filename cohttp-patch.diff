@@ -1,47 +1,24 @@
 diff --git a/async/cohttp_async.ml b/async/cohttp_async.ml
-index 42ffeb4..4b00a85 100644
+index 94e5bdd..f860ee9 100644
 --- a/async/cohttp_async.ml
 +++ b/async/cohttp_async.ml
-@@ -63,25 +63,31 @@ end
+@@ -62,7 +62,10 @@ end
+ 
  let pipe_of_body read_chunk ic =
    let open Cohttp.Transfer in
-   let (rd, wr) = Pipe.create () in
--  let finished =
--    Deferred.repeat_until_finished ()
--      (fun () ->
--         read_chunk ic
--         >>= function
--         | Chunk buf ->
--           begin
--             Pipe.write_when_ready wr ~f:(fun wrfn -> wrfn buf)
--             >>| function
--             | `Closed -> `Finished ()
--             | `Ok _ -> `Repeat ()
--           end
--         | Final_chunk buf ->
--           Pipe.write_when_ready wr ~f:(fun wrfn -> wrfn buf)
--           >>| fun _ -> `Finished ()
--         | Done -> return (`Finished ())
--      ) in
--  don't_wait_for (finished >>| fun () -> Pipe.close wr);
--  (rd, finished)
+-  Pipe.init (fun writer ->
 +  let monitor = Monitor.create () in
 +  let finished = Ivar.create () in
 +  upon (Monitor.get_next_error monitor) (fun _ -> Ivar.fill_if_empty finished ());
 +  Scheduler.within ~monitor (fun () ->
-+    Deferred.repeat_until_finished () (fun () ->
-+      read_chunk ic
-+      >>= function
-+      | Chunk buf ->
-+        begin
-+          Pipe.write_when_ready wr ~f:(fun wrfn -> wrfn buf)
-+          >>| function
-+          | `Closed -> `Finished ()
-+          | `Ok _ -> `Repeat ()
-+        end
-+      | Final_chunk buf ->
-+        Pipe.write_when_ready wr ~f:(fun wrfn -> wrfn buf)
-+        >>| fun _ -> `Finished ()
+     Deferred.repeat_until_finished () (fun () ->
+       read_chunk ic >>= function
+       | Chunk buf ->
+@@ -80,7 +83,14 @@ let pipe_of_body read_chunk ic =
+       | Final_chunk buf ->
+         Pipe.write_when_ready writer ~f:(fun write -> write buf)
+         >>| fun _ -> `Finished ()
+-      | Done -> return (`Finished ())))
 +      | Done -> return (`Finished ())
 +    )
 +    >>> fun () ->
@@ -53,17 +30,17 @@ index 42ffeb4..4b00a85 100644
  
  module Body = struct
    module B = Cohttp.Body
-@@ -171,13 +177,29 @@ module Client = struct
+@@ -169,13 +179,29 @@ module Client = struct
      (* Connect to the remote side *)
-     Net.connect_uri ?interrupt req.Request.uri
+     Net.connect_uri ?interrupt ?ssl_config req.Request.uri
      >>= fun (ic,oc) ->
 -    Request.write (fun writer -> Body.write Request.write_body body writer) req oc
 -    >>= fun () ->
--    read_request ic >>| fun (resp, body, body_finished) ->
+-    read_request ic >>| fun (resp, body) ->
 -    don't_wait_for (
--      body_finished >>= fun () ->
+-      Pipe.closed body >>= fun () ->
 -      Deferred.all_ignore [Reader.close ic; Writer.close oc]);
--    (resp, body)
+-    (resp, `Pipe body)
 +    let interrupt =
 +      match interrupt with
 +      | None -> Deferred.never ()
@@ -88,5 +65,5 @@ index 42ffeb4..4b00a85 100644
 +      upon body_finished teardown;
 +      (resp, body)
  
-   let callv ?interrupt uri reqs =
+   let callv ?interrupt ?ssl_config uri reqs =
      let reqs_c = ref 0 in
