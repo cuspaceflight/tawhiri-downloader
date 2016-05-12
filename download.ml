@@ -72,7 +72,7 @@ let with_retries ~name ~f ~attempt_timeout ~interrupt =
   in
   loop ~backoff:(Time.Span.of_sec 5.)
 
-let filter_messages_and_assert_all_are_present messages =
+let filter_messages_and_assert_all_present =
   let expect_count =
     let f ls = (List.length Variable.axis) * (List.length (Level.ts_in ls)) in
     let a = f Level_set.A in
