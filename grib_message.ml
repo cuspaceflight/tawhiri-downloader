@@ -5,7 +5,6 @@ module Log = Async.Std.Log
 module F : sig
   type grib_handle_and_data
   val grib_handle_new_from_message : Bigstring.t -> grib_handle_and_data Or_error.t
-  val grib_get_long   : grib_handle_and_data -> string -> Int64.t Or_error.t
   val grib_get_int    : grib_handle_and_data -> string -> int Or_error.t
   val grib_get_double : grib_handle_and_data -> string -> float Or_error.t
   val grib_get_double_array_into
@@ -39,8 +38,6 @@ end = struct
     function
     | 0 -> Ok ()
     | error_code -> Or_error.error_string (grib_get_error_message error_code)
-
-  let grib_check_exn x = Or_error.ok_exn (grib_check x)
 
   let grib_handle_delete =
     foreign
@@ -85,7 +82,7 @@ end = struct
     grib_get_long t key >>= fun res ->
     match Int64.to_int res with
     | Some x -> Ok x
-    | None -> Error (Error.create "variable Int64.to_int" (key, res) <:sexp_of< string * Int64.t >>)
+    | None -> error_s [%sexp ("variable Int64.to_int", (key : string), (res : Int64.t))]
 
   let grib_get_double =
     let f =

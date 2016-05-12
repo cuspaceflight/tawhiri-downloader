@@ -1,14 +1,14 @@
 open Core.Std
 
 module Hour : sig
-  type t = private int with sexp, compare
+  type t = private int [@@deriving sexp, compare]
   val of_int : int -> t Or_error.t
   val to_string : t -> string
   val to_int : t -> int
   val axis : t list
   val index : t -> int
 end = struct
-  type t = int with sexp, compare
+  type t = int [@@deriving sexp, compare]
 
   let of_int i =
     if i mod 3 = 0 && 0 <= i && i <= 192
@@ -32,7 +32,7 @@ module Variable = struct
     | U_wind
     | V_wind
     | Height
-  with sexp, compare
+  [@@deriving sexp, compare]
 
   let to_string =
     function
@@ -55,7 +55,7 @@ module Level_set = struct
   type t =
     | A  (* pgrb2 *)
     | B  (* pgrb2b *)
-  with sexp, compare
+  [@@deriving sexp, compare]
 
   let to_string =
     function
@@ -64,7 +64,7 @@ module Level_set = struct
 end
 
 module Level : sig
-  type t with sexp, compare
+  type t [@@deriving sexp, compare]
 
   val of_mb : int -> t Or_error.t
   val to_mb : t -> int
@@ -79,7 +79,7 @@ module Level : sig
   val ts_in : Level_set.t -> t list
   val level_set : t -> Level_set.t
 end = struct
-  type t = int with sexp
+  type t = int [@@deriving sexp]
 
   let compare = Fn.flip Int.compare (* higher pressures first *)
   let to_string = sprintf "%i mb"

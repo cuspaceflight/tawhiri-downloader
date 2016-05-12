@@ -1,7 +1,7 @@
 open Core.Std
 open Async.Std
 
-type range = [ `exactly_pos_len of int * int | `all_with_max_len of int ] with sexp
+type range = [ `exactly_pos_len of int * int | `all_with_max_len of int ] [@@deriving sexp]
 
 val get
   :  Uri.t

@@ -7,7 +7,7 @@ open Cohttp_async
  * https://github.com/mirage/ocaml-cohttp/issues/445 are fixed upstream, you
  * need a patched cohttp to avoid leaking file descriptors. See cohttp-patch.diff *)
 
-type range = [ `exactly_pos_len of int * int | `all_with_max_len of int ] with sexp
+type range = [ `exactly_pos_len of int * int | `all_with_max_len of int ] [@@deriving sexp]
 
 (* I'd rather use Iobufs everywhere, but other bits need to take bigstrings.
  * The iobuf here is just a temporary one looking at the same backing bigstring

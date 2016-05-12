@@ -84,7 +84,7 @@ let filter_messages_and_assert_all_are_present messages =
   let contains_dup =
     let open Grib_index in
     let compare a b =
-      <:compare< Variable.t * Level.t >>
+      [%compare: Variable.t * Level.t]
         (a.variable, a.level)
         (b.variable, b.level)
     in
@@ -93,7 +93,6 @@ let filter_messages_and_assert_all_are_present messages =
   fun messages ~level_set ~expect_hour ~expect_fcst_time ->
     let open Result.Monad_infix in
     let rec filter_messages ~acc ~messages =
-      let unexpected_msg msg = 
       match messages with
       | [] -> Ok acc
       | msg :: messages ->
