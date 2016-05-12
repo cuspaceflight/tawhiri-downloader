@@ -1,3 +1,11 @@
+# This hotpatch is due to ocaml-cohttp#444 and ocaml-cohttp#445.
+# This patch has a couple of problems:
+#  - it doesn't solve the problems in general (i.e., only for [request])
+#  - if you fill [interrupt], the pipe might be closed (due to the reader
+#    closing), which is confusing. However, we don't need good pipe closing
+#    hygine in tawhiri-downloader, so as long as the fds are closed when
+#    interrupt is filled, I'm happy.
+# It's good enough until those bugs are fixed, but not good enought to upstream.
 diff --git a/async/cohttp_async.ml b/async/cohttp_async.ml
 index 94e5bdd..e827ee4 100644
 --- a/async/cohttp_async.ml
