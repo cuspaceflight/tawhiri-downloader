@@ -1,5 +1,5 @@
 # apt-get install libgrib-api-dev libffi-dev
-# opam pin cohttp https://github.com/danielrichman/ocaml-cohttp#v0.20.2-hotpatch
+# opam pin cohttp https://github.com/danielrichman/ocaml-cohttp#v0.21.0-drichman
 # opam install core async cohttp ctypes ctypes-foreign 
 
 corebuild \
