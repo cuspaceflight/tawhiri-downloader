@@ -1,5 +1,5 @@
-open Core.Std
-open Async.Std
+open Core
+open Async
 open Cohttp
 open Cohttp_async
 open Common
@@ -159,7 +159,7 @@ let forecast_time_arg =
     (fun s -> Or_error.ok_exn (Forecast_time.of_string_tawhiri s))
 
 let one_cmd = 
-  Command.async
+  Command.async_spec
     ~summary:"Download a specific dataset"
     Command.Spec.(
       shared_args ()
@@ -168,7 +168,7 @@ let one_cmd =
     one_main
 
 let daemon_cmd = 
-  Command.async
+  Command.async_spec
     ~summary:"Start the downloader daemon"
     Command.Spec.(
       shared_args ()

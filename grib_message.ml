@@ -1,6 +1,6 @@
-open Core.Std
+open Core
 open Common
-module Log = Async.Std.Log
+module Log = Async.Log
 
 module F : sig
   type grib_handle_and_data
@@ -15,7 +15,7 @@ module F : sig
 end = struct
   open Ctypes
   open Foreign
-  module Gc = Core.Std.Gc
+  module Gc = Core.Gc
 
   type grib_handle_struct
   let grib_handle_struct : grib_handle_struct structure typ = structure "grib_handle"

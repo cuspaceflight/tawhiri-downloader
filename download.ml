@@ -1,9 +1,9 @@
-open Core.Std
-open Async.Std
+open Core
+open Async
 open Common
 
 module Urls = struct
-  let base_url = "http://www.nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod"
+  let base_url = "https://www.nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod"
   let forecast_dir = sprintf !"%s/gfs.%{Forecast_time.to_string_noaa}/" base_url
 
   let grib_file fcst_time levels hour =
@@ -125,11 +125,12 @@ let get_index ~interrupt fcst_time level_set hour =
     ~interrupt ~attempt_timeout:(Time.Span.of_sec 10.)
     ~f:(fun ~interrupt () ->
       let open Deferred_result_infix in
+      let bigstring_to_string b = Bigstring.to_string b (* eliminate optional arguments *) in
       throttled_get
         (Urls.index_file fcst_time level_set hour)
         ~range:(`all_with_max_len (32 * 1024))
         ~interrupt
-      >>|?| Bigstring.to_string
+      >>|?| bigstring_to_string
       >>|?= Grib_index.parse
       >>|?= fun messages ->
       filter_messages_and_assert_all_present
@@ -231,7 +232,7 @@ let download_raw ~interrupt ~filename fcst_time =
   in
   let jobs =
     List.cartesian_product Hour.axis Level_set.([A; B])
-    |> List.sort ~cmp:(fun (h1, _) (h2, _) -> Hour.compare h1 h2)
+    |> List.sort ~compare:(fun (h1, _) (h2, _) -> Hour.compare h1 h2)
   in
   loop ~ongoing1:None ~ongoing2:None ~waiting:jobs
   >>=?= fun () ->

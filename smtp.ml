@@ -1,5 +1,5 @@
-open Core.Std
-open Async.Std
+open Core
+open Async
 open Common
 
 let rec read_response ?(accept_354:unit option) pipe =
@@ -23,7 +23,7 @@ let read_response_exn ?accept_354 pipe =
 let server = Socket.Address.Inet.create Unix.Inet_addr.localhost ~port:25
 
 let writer_lines_crlf w =
-  Pipe.init_reader (fun p ->
+  Pipe.create_writer (fun p ->
     Writer.transfer w p (fun s ->
       Writer.write w s;
       Writer.write w "\r\n"
@@ -71,7 +71,7 @@ let send_mail ?(helo=default_helo) ?(mail_from=default_from) ~rcpt_to ~subject ~
   | (Ok (), []) -> return (Or_error.error_string "rcpt_to empty")
   | (Ok (), (_::_ as rcpt_to)) ->
     Monitor.try_with_or_error (fun () ->
-      Tcp.with_connection (Tcp.to_inet_address server) (fun _ reader writer ->
+      Tcp.with_connection (Tcp.Where_to_connect.of_inet_address server) (fun _ reader writer ->
         let reader = Reader.lines reader in
         let writer = writer_lines_crlf writer in
         let command ?accept_354 s =

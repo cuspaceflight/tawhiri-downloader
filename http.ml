@@ -1,5 +1,5 @@
-open Core.Std
-open Async.Std
+open Core
+open Async
 open Cohttp
 open Cohttp_async
 
@@ -25,7 +25,7 @@ let drain_pipe_to_bigstring ~max_len pipe =
       if Iobuf.length iobuf < String.length src
       then return (Or_error.error_string "too much data received")
       else begin
-        Iobuf.Fill.string iobuf src;
+        Iobuf.Fill.stringo iobuf src;
         load_loop ()
       end
   in

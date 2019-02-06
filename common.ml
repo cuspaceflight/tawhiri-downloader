@@ -1,4 +1,4 @@
-open Core.Std
+open Core
 
 module Hour : sig
   type t = private int [@@deriving sexp, compare]
@@ -111,7 +111,7 @@ end = struct
     |> Int.Table.of_alist_exn
     |> Hashtbl.find_exn
 
-  let axis = List.sort ~cmp:compare (mbs_pgrb2 @ mbs_pgrb2b)
+  let axis = List.sort ~compare (mbs_pgrb2 @ mbs_pgrb2b)
 
   let ts_in s =
     match (s : Level_set.t) with
@@ -137,7 +137,7 @@ module Layout = struct
 end
 
 module Deferred_result_infix = struct
-  open Async.Std
+  open Async
 
   let (>>|?) = `no 
   let (>>=?) = `no 
@@ -149,7 +149,7 @@ module Deferred_result_infix = struct
     | (Error _ as e) -> return e
   let (>>|?=) x f = 
     x >>| fun x ->
-    Result.bind x f 
+    Result.bind x ~f 
   let (>>=?|) x f = 
     x >>= function
     | Ok x ->
@@ -160,6 +160,6 @@ module Deferred_result_infix = struct
     x >>| fun x ->
     Result.map x ~f
 
-  let (>>-?=) = Result.bind
+  let (>>-?=) x f = Result.bind x ~f
   let (>>-?|) x f = Result.map x ~f
 end

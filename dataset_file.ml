@@ -1,5 +1,7 @@
-open Core.Std
-open Async.Std
+module Ocaml_unix = Unix
+
+open Core
+open Async
 open Common
 
 type t = (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Genarray.t
@@ -62,7 +64,7 @@ type mode = RO | RW
 
 let create ~filename mode =
   let module BA = Bigarray in
-  let module Unix = Core.Std.Unix in
+  let module Unix = Core.Unix in
   let (unix_mode, shared) =
     match mode with
     | RW -> ([Unix.O_RDWR; Unix.O_CREAT], true)
@@ -71,7 +73,7 @@ let create ~filename mode =
   Monitor.try_with_or_error (fun () ->
     In_thread.run (fun () ->
       Unix.with_file filename ~mode:unix_mode ~f:(fun fd ->
-        BA.Genarray.map_file fd BA.float32 BA.c_layout shared shape_arr
+        Ocaml_unix.map_file fd BA.float32 BA.c_layout shared shape_arr
       )
     )
   )

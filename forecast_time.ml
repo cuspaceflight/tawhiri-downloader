@@ -1,4 +1,4 @@
-open Core.Std
+open Core
 
 type t = Date.t * [ `h00 | `h06 | `h12 | `h18 ] [@@deriving sexp]
 
