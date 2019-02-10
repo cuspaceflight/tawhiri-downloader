@@ -1,5 +1,3 @@
-module Ocaml_unix = Unix
-
 open Core
 open Async
 open Common
@@ -73,14 +71,19 @@ let create ~filename mode =
   Monitor.try_with_or_error (fun () ->
     In_thread.run (fun () ->
       Unix.with_file filename ~mode:unix_mode ~f:(fun fd ->
-        Ocaml_unix.map_file fd BA.float32 BA.c_layout shared shape_arr
+        Caml.Unix.map_file fd BA.float32 BA.c_layout shared shape_arr
       )
     )
   )
 
 let slice t hour level variable =
-  Bigarray.Genarray.slice_left t [|Hour.index hour; Level.index level; Variable.index variable|]
-  |> Bigarray.array2_of_genarray
+  let slice =
+    Bigarray.Genarray.slice_left t [|Hour.index hour; Level.index level; Variable.index variable|]
+  in
+  (* https://caml.inria.fr/mantis/view.php?id=7915 *)
+  let mapped_ops = Obj.field (Obj.repr t) 0 in
+  Obj.set_field (Obj.repr slice) 0 mapped_ops;
+  Bigarray.array2_of_genarray slice
 
 let msync = 
   let open Ctypes in
