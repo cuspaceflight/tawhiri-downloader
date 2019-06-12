@@ -1,7 +1,5 @@
 open Core
 open Async
-open Cohttp
-open Cohttp_async
 open Common
 
 let one_main ?directory ?log_level forecast_time () =
@@ -150,7 +148,7 @@ let shared_args () =
   in
   empty
   ++ step (fun m directory -> m ?directory)
-  +> flag "directory" (optional file) ~doc:"DIR (optional) directory in which to place the dataset"
+  +> flag "directory" (optional Filename.arg_type) ~doc:"DIR (optional) directory in which to place the dataset"
   ++ step (fun m log_level -> m ?log_level)
   +> flag "log-level" (optional log_level) ~doc:"DEBUG|INFO|ERROR (optional) log level"
 

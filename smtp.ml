@@ -1,6 +1,5 @@
 open Core
 open Async
-open Common
 
 let rec read_response ?(accept_354:unit option) pipe =
   Pipe.read pipe

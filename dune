@@ -1,0 +1,11 @@
+(executable
+  (name main)
+  (libraries
+    core
+    async
+	cohttp-async
+	ctypes.foreign
+  )
+  (link_flags (-cclib -lgrib_api))
+  (preprocess (pps ppx_jane))
+)
