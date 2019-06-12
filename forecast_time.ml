@@ -18,21 +18,22 @@ let hour_int' =
 
 let hour_int (_, h) = hour_int' h
 
-let to_string (date, hour) =
+let to_string_gen fmt (date, hour) =
   let hour = hour_int' hour in
   let year = Date.year date in
   let month = Month.to_int (Date.month date) in
   let day = Date.day date in
-  sprintf !"%04i%02i%02i%02i" year month day hour
+  sprintf fmt year month day hour
 
-let to_string_noaa = to_string
-let to_string_tawhiri = to_string
+let to_string_yyyymmddhh = to_string_gen !"%04i%02i%02i%02i"
+let to_string_yyyymmdd_slash_hh = to_string_gen !"%04i%02i%02i/%02i"
 
 let () = 
-  assert (to_string (Date.of_string "1994-03-14", `h06) = "1994031406")
+  assert (to_string_yyyymmddhh        (Date.of_string "1994-03-14", `h06) = "1994031406");
+  assert (to_string_yyyymmdd_slash_hh (Date.of_string "1994-03-14", `h06) = "19940314/06")
 
-let of_string s =
-  let err s = Or_error.errorf "Bad Forecast time string (tawhiri) %s" s in
+let of_string_yyyymmddhh s =
+  let err s = Or_error.errorf "Bad Forecast time string (yyyymmddhh) %s" s in
   if String.length s <> 10
   then err s
   else
@@ -50,11 +51,8 @@ let of_string s =
     with 
     | _ -> err s
 
-let of_string_noaa = of_string
-let of_string_tawhiri = of_string
-
 let () =
-  assert (of_string "1994031418" = Ok (Date.of_string "1994-03-14", `h18))
+  assert (of_string_yyyymmddhh "1994031418" = Ok (Date.of_string "1994-03-14", `h18))
 
 (* The first file appears at about +3h30, and it's all up by about +4h30 *)
 let expect_first_file_at (date, hour) =

@@ -4,7 +4,7 @@ open Common
 
 module Urls = struct
   let base_url = "https://www.nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod"
-  let forecast_dir = sprintf !"%s/gfs.%{Forecast_time.to_string_noaa}/" base_url
+  let forecast_dir = sprintf !"%s/gfs.%{Forecast_time#yyyymmddhh}/" base_url
 
   let grib_file fcst_time levels hour =
     let fcst_hr = Forecast_time.hour_int fcst_time in
@@ -119,7 +119,7 @@ let get_index ~interrupt fcst_time level_set hour =
   with_retries
     ~name:(
       sprintf
-        !"Download index %{Forecast_time} %{Level_set} %{Hour}"
+        !"Download index %{Forecast_time#yyyymmddhh} %{Level_set} %{Hour}"
         fcst_time level_set hour
     )
     ~interrupt ~attempt_timeout:(Time.Span.of_sec 10.)
@@ -165,7 +165,7 @@ let get_message ~interrupt (msg : Grib_index.message) =
 
 let download_raw ~interrupt ~filename fcst_time =
   let open Deferred_result_infix in
-  Log.Global.debug !"Begin download of %{Forecast_time}" fcst_time;
+  Log.Global.debug !"Begin download of %{Forecast_time#yyyymmddhh}" fcst_time;
   Dataset_file.create ~filename RW
   >>=?= fun ds ->
   let maybe_wait =

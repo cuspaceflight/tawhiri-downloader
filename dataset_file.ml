@@ -11,7 +11,7 @@ module Filename = struct
   let downloader_prefix = "download-"
 
   let one ?(directory=default_directory) ?(prefix="") ?(suffix="") forecast_time =
-    directory ^/ sprintf !"%s%{Forecast_time#tawhiri}%s" prefix forecast_time suffix
+    directory ^/ sprintf !"%s%{Forecast_time#yyyymmddhh}%s" prefix forecast_time suffix
 
   type list_item =
     { fcst_time : Forecast_time.t
@@ -35,7 +35,7 @@ module Filename = struct
       if not plausible
       then None
       else begin
-        match Forecast_time.of_string_tawhiri (sub basename) with
+        match Forecast_time.of_string_yyyymmddhh (sub basename) with
         | Ok fcst_time -> Some { fcst_time; basename; path = directory ^/ basename }
         | Error _ -> None
       end

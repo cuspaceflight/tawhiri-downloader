@@ -21,7 +21,7 @@ type message =
 
 let message_to_string { offset; length; fcst_time; variable; level; hour } =
   sprintf
-    !"%{Forecast_time} %{Variable} %{Level} %{Hour} (%i;%i)"
+    !"%{Forecast_time#yyyymmddhh} %{Variable} %{Level} %{Hour} (%i;%i)"
     fcst_time variable level hour offset length
 
 let drop_suffix ~suffix s =
@@ -50,7 +50,7 @@ let parse_hour =
 let parse_fcst_time s =
   if not (String.is_prefix s ~prefix:"d=")
   then Or_error.error_string "fcst time prefix"
-  else Forecast_time.of_string_noaa (String.subo s ~pos:2)
+  else Forecast_time.of_string_yyyymmddhh (String.subo s ~pos:2)
 
 let parse_level s =
   let open Result.Monad_infix in

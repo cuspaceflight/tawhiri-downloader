@@ -81,7 +81,7 @@ let daemon_main ?directory ?log_level ?first_fcst_time ~error_rcpt_to () =
     let wait_until = Forecast_time.expect_first_file_at forecast_time in
     begin
       if Time.(>) wait_until (Time.now ())
-      then Log.Global.info !"Waiting until %{Time} before starting %{Forecast_time}" wait_until forecast_time
+      then Log.Global.info !"Waiting until %{Time} before starting %{Forecast_time#yyyymmddhh}" wait_until forecast_time
     end;
     choose
       [ choice (Clock.at wait_until) (fun () -> Ok ())
@@ -104,16 +104,16 @@ let daemon_main ?directory ?log_level ?first_fcst_time ~error_rcpt_to () =
     | `Signal_err e ->
       return (Error e)
     | `Deadline ->
-      let msg = sprintf !"Deadline for %{Forecast_time} reached, skipping" forecast_time in
+      let msg = sprintf !"Deadline for %{Forecast_time#yyyymmddhh} reached, skipping" forecast_time in
       Log.Global.error "%s" msg;
       send_mail msg;
       continue ()
     | `Res (Error err) ->
-      Log.Global.error !"%{Forecast_time} failed: %{Error#mach}" forecast_time err;
-      send_mail (sprintf !"%{Forecast_time} failed\n\n%{Error#hum}" forecast_time err);
+      Log.Global.error !"%{Forecast_time#yyyymmddhh} failed: %{Error#mach}" forecast_time err;
+      send_mail (sprintf !"%{Forecast_time#yyyymmddhh} failed\n\n%{Error#hum}" forecast_time err);
       continue ()
     | `Res (Ok ()) ->
-      Log.Global.info !"Completed %{Forecast_time}" forecast_time;
+      Log.Global.info !"Completed %{Forecast_time#yyyymmddhh}" forecast_time;
       clean_directory ?directory ~keep:forecast_time ()
       >>= function
       | Error err as err' -> 
@@ -154,7 +154,7 @@ let shared_args () =
 
 let forecast_time_arg =
   Command.Spec.Arg_type.create
-    (fun s -> Or_error.ok_exn (Forecast_time.of_string_tawhiri s))
+    (fun s -> Or_error.ok_exn (Forecast_time.of_string_yyyymmddhh s))
 
 let one_cmd = 
   Command.async_spec
