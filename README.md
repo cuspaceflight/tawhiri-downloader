@@ -4,8 +4,8 @@ opam init --comp=4.07.0 -y
 eval `opam env`
 
 apt install -y libssl-dev libffi-dev libgrib-api-dev
-opam pin cohttp.1.2.0 'https://github.com/danielrichman/ocaml-cohttp.git#v1.2.0-drichman'
-opam pin cohttp-async.1.2.0 'https://github.com/danielrichman/ocaml-cohttp.git#v1.2.0-drichman'
+opam pin cohttp.2.1.2 'https://github.com/danielrichman/ocaml-cohttp.git#v2.1.2-drichman'
+opam pin cohttp-async.2.1.2 'https://github.com/danielrichman/ocaml-cohttp.git#v2.1.2-drichman'
 opam install core async async_ssl cohttp-async ctypes ctypes-foreign
 ./build.sh
 ```
