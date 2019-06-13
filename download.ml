@@ -128,7 +128,7 @@ let get_index ~interrupt fcst_time level_set hour =
       let bigstring_to_string b = Bigstring.to_string b (* eliminate optional arguments *) in
       throttled_get
         (Urls.index_file fcst_time level_set hour)
-        ~range:(`all_with_max_len (32 * 1024))
+        ~range:(`all_with_max_len (128 * 1024))
         ~interrupt
       >>|?| bigstring_to_string
       >>|?= Grib_index.parse
