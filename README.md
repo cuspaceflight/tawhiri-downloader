@@ -3,7 +3,7 @@ apt install -y build-essential rsync git libpcre3-dev libncurses-dev pkg-config 
 opam init --comp=4.07.0 -y
 eval `opam env`
 
-apt install -y libssl-dev libffi-dev libgrib-api-dev
+apt install -y libssl-dev libffi-dev libeccodes-dev
 # This patch on top of cohttp ensures allows using ~interrupt to abort an in-progress
 # HTTP GET (the un-patched cohttp ~interrupt can only abort the 'connect' step)
 opam pin cohttp.2.1.2 'https://github.com/danielrichman/ocaml-cohttp.git#v2.1.2-drichman'

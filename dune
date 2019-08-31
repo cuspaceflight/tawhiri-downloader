@@ -6,6 +6,6 @@
     cohttp-async
     ctypes.foreign
   )
-  (link_flags (-cclib -lgrib_api))
+  (link_flags (-cclib -leccodes))
   (preprocess (pps ppx_jane))
 )
