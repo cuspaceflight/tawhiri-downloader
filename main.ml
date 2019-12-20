@@ -2,7 +2,8 @@ open Core
 open Async
 open Common
 
-let one_main ?directory ?log_level forecast_time () =
+let one_main ?directory ?log_level length forecast_time () =
+  Hour.set_hours length;
   Option.iter log_level ~f:Log.Global.set_level;
   let interrupt =
     let signal = Ivar.create () in
@@ -59,7 +60,8 @@ let (send_mail, wait_for_mails) =
   in
   (send_mail, wait_for_mails)
 
-let daemon_main ?directory ?log_level ?first_fcst_time ~error_rcpt_to () =
+let daemon_main ?directory ?log_level length ?first_fcst_time ~error_rcpt_to () =
+  Hour.set_hours length;
   Option.iter log_level ~f:Log.Global.set_level;
   let send_mail = send_mail ~error_rcpt_to in
   let first_fcst_time =
@@ -151,6 +153,7 @@ let shared_args () =
   +> flag "directory" (optional Filename.arg_type) ~doc:"DIR (optional) directory in which to place the dataset"
   ++ step (fun m log_level -> m ?log_level)
   +> flag "log-level" (optional log_level) ~doc:"DEBUG|INFO|ERROR (optional) log level"
+  +> flag "length" (optional_with_default 192 int) ~doc:"hours (optional) forecasting length in hours in 3-hour steps. default = 192"
 
 let forecast_time_arg =
   Command.Spec.Arg_type.create

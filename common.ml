@@ -5,13 +5,16 @@ module Hour : sig
   val of_int : int -> t Or_error.t
   val to_string : t -> string
   val to_int : t -> int
-  val axis : t list
+  val axis : unit -> t list
   val index : t -> int
+  val set_hours : int -> unit
 end = struct
   type t = int [@@deriving sexp, compare]
 
+  let forecast_hours = ref 192
+
   let of_int i =
-    if i mod 3 = 0 && 0 <= i && i <= 192
+    if i mod 3 = 0 && 0 <= i && i <= !forecast_hours
     then Ok i
     else Or_error.errorf "Invalid hour %i" i
 
@@ -19,12 +22,20 @@ end = struct
 
   let to_int i = i
 
-  let axis = List.range ~stride:3 ~start:`inclusive ~stop:`inclusive 0 192
+  let axis () = List.range ~stride:3 ~start:`inclusive ~stop:`inclusive 0 !forecast_hours
 
   let index i = i / 3
 
-  let () = List.iter axis ~f:(fun h -> assert (of_int h = Ok h))
-  let () = List.iteri axis ~f:(fun idx hour -> assert (index hour = idx))
+  let set_hours length =
+    match length > 0 && length < 385 && ((length mod 3) = 0) with
+      | true ->
+        forecast_hours := length;
+        let () = List.iter (axis ()) ~f:(fun h -> assert (of_int h = Ok h)) in
+        let () = List.iteri (axis ()) ~f:(fun idx hour -> assert (index hour = idx)) in
+        ()
+      | _ -> failwith "length of wrong value. length has to be > 0, < 385 and a multiple of 3"
+  ;;
+
 end
 
 module Variable = struct
@@ -74,7 +85,7 @@ module Level : sig
 
   (** For the [t]s that appear in both level sets, we've arbitrarily assigned
       them to exactly one; [ts_in A] and [ts_in B] partition the levels and
-      you're guaranteed that [List.mem (ts_in (level_set t)) t] and 
+      you're guaranteed that [List.mem (ts_in (level_set t)) t] and
       [List.forall (ts_in ls) ~f:(fun t -> level_set t = ls). *)
   val ts_in : Level_set.t -> t list
   val level_set : t -> Level_set.t
@@ -86,15 +97,15 @@ end = struct
   let to_mb x = x
 
   (* 1, 2, 3, 5, 7 appear in both files. We ignore the copies in the A set. *)
-  let mbs_pgrb2 = 
-    [ 10; 20; 30; 50; 70; 100; 150; 200; 250; 300; 350; 400 
-    ; 450; 500; 550; 600; 650; 700; 750; 800; 850; 900; 925 
+  let mbs_pgrb2 =
+    [ 10; 20; 30; 50; 70; 100; 150; 200; 250; 300; 350; 400
+    ; 450; 500; 550; 600; 650; 700; 750; 800; 850; 900; 925
     ; 950; 975; 1000
     ]
 
   let mbs_pgrb2b =
-    [ 1; 2; 3; 5; 7; 125; 175; 225; 275; 325; 375; 425 
-    ; 475; 525; 575; 625; 675; 725; 775; 825; 875 
+    [ 1; 2; 3; 5; 7; 125; 175; 225; 275; 325; 375; 425
+    ; 475; 525; 575; 625; 675; 725; 775; 825; 875
     ]
 
   let of_mb =
@@ -139,24 +150,24 @@ end
 module Deferred_result_infix = struct
   open Async
 
-  let (>>|?) = `no 
-  let (>>=?) = `no 
+  let (>>|?) = `no
+  let (>>=?) = `no
 
   (* please forgive me. *)
-  let (>>=?=) x f = 
+  let (>>=?=) x f =
     x >>= function
-    | Ok y -> f y 
+    | Ok y -> f y
     | (Error _ as e) -> return e
-  let (>>|?=) x f = 
+  let (>>|?=) x f =
     x >>| fun x ->
-    Result.bind x ~f 
-  let (>>=?|) x f = 
+    Result.bind x ~f
+  let (>>=?|) x f =
     x >>= function
     | Ok x ->
       f x >>| fun x ->
       Ok x
     | (Error _ as e) -> return e
-  let (>>|?|) x f = 
+  let (>>|?|) x f =
     x >>| fun x ->
     Result.map x ~f
 

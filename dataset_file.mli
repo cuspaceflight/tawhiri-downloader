@@ -18,9 +18,6 @@ module Filename : sig
   val list : (unit -> list_item list Or_error.t Deferred.t) with_options
 end
 
-val shape : int * int * int * int * int
-val shape_arr : int array
-
 type mode = RO | RW
 
 val create : filename:string -> mode -> t Or_error.t Deferred.t

@@ -231,7 +231,7 @@ let download_raw ~interrupt ~filename fcst_time =
       loop ~ongoing1 ~ongoing2 ~waiting
   in
   let jobs =
-    List.cartesian_product Hour.axis Level_set.([A; B])
+    List.cartesian_product (Hour.axis ()) Level_set.([A; B])
     |> List.sort ~compare:(fun (h1, _) (h2, _) -> Hour.compare h1 h2)
   in
   loop ~ongoing1:None ~ongoing2:None ~waiting:jobs

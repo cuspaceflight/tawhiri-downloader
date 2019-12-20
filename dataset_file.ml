@@ -43,24 +43,29 @@ module Filename = struct
 end
 
 
-let shape = (65, 47, 3, 361, 720)
-let shape_arr = let (a, b, c, d, e) = shape in [|a;b;c;d;e|]
-let len_bytes = Array.fold shape_arr ~init:4 ~f:( * )
+let len_bytes arr = Array.fold arr ~init:4 ~f:( * )
 
-let () =
-  let len = List.length in
-  let (a, b, c, _, _) = shape in
-  assert (len Hour.axis = a);
-  assert (len Level.axis = b);
-  assert (len Variable.axis = c)
-
-let () =
-  let open Ctypes in
-  assert (sizeof (bigarray genarray shape_arr Bigarray.float32) = len_bytes)
+let shape_array () =
+  let shape = ((List.length (Hour.axis ())), 47, 3, 361, 720) in
+  let shape_arr = let (a, b, c, d, e) = shape in [|a;b;c;d;e|] in
+  let () =
+    let len = List.length in
+    let (a, b, c, _, _) = shape in
+    assert (len Level.axis = b);
+    assert (len Variable.axis = c)
+  in
+  let () =
+    let open Ctypes in
+    assert (sizeof (bigarray genarray shape_arr Bigarray.float32) = len_bytes shape_arr)
+  in
+  shape_arr
+;;
 
 type mode = RO | RW
 
 let create ~filename mode =
+  let shape_arr = shape_array ()
+  in
   let module BA = Bigarray in
   let module Unix = Core.Unix in
   let (unix_mode, shared) =
@@ -101,7 +106,7 @@ let msync =
     let ms_sync = 4 in
     In_thread.run ~name:"msync" (fun () ->
       let start = Time.now () in
-      let r = Or_error.try_with (fun () -> f data (Unsigned.Size_t.of_int len_bytes) ms_sync) in
+      let r = Or_error.try_with (fun () -> f data (Unsigned.Size_t.of_int (len_bytes (shape_array ()))) ms_sync) in
       let delta = Time.diff (Time.now ()) start in
       (r, delta)
     )
