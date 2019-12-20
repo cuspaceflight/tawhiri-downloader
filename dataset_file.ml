@@ -42,7 +42,7 @@ module Filename = struct
     )
 end
 
-
+let cached_byte_len = ref 0
 let len_bytes arr = Array.fold arr ~init:4 ~f:( * )
 
 let shape_array () =
@@ -66,6 +66,7 @@ type mode = RO | RW
 let create ~filename mode =
   let shape_arr = shape_array ()
   in
+  cached_byte_len := len_bytes shape_arr;
   let module BA = Bigarray in
   let module Unix = Core.Unix in
   let (unix_mode, shared) =
@@ -106,7 +107,7 @@ let msync =
     let ms_sync = 4 in
     In_thread.run ~name:"msync" (fun () ->
       let start = Time.now () in
-      let r = Or_error.try_with (fun () -> f data (Unsigned.Size_t.of_int (len_bytes (shape_array ()))) ms_sync) in
+      let r = Or_error.try_with (fun () -> f data (Unsigned.Size_t.of_int !cached_byte_len) ms_sync) in
       let delta = Time.diff (Time.now ()) start in
       (r, delta)
     )
