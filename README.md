@@ -1,13 +1,17 @@
-```
-apt install -y build-essential rsync git libpcre3-dev libncurses-dev pkg-config m4 unzip aspcud autoconf bubblewrap
-opam init --comp=4.07.0 -y
-eval `opam env`
+As root
 
-apt install -y libssl-dev libffi-dev libeccodes-dev
-# This patch on top of cohttp ensures allows using ~interrupt to abort an in-progress
-# HTTP GET (the un-patched cohttp ~interrupt can only abort the 'connect' step)
-opam pin cohttp.2.1.2 'https://github.com/danielrichman/ocaml-cohttp.git#v2.1.2-drichman'
-opam pin cohttp-async.2.1.2 'https://github.com/danielrichman/ocaml-cohttp.git#v2.1.2-drichman'
-opam install core async async_ssl cohttp-async ctypes ctypes-foreign
-dune build --profile=release main.exe
-```
+    apt install -y build-essential rsync git libpcre3-dev libncurses-dev pkg-config m4 unzip aspcud autoconf bubblewrap
+    apt install -y libssl-dev libgmp-dev libffi-dev libeccodes-dev libcurl4-gnutls-dev
+    sh <(curl -sL https://raw.githubusercontent.com/ocaml/opam/master/shell/install.sh)
+
+As your user
+
+    opam init -y
+    eval $(opam env)
+    opam install core async ctypes ctypes-foreign ocurl
+
+I last built this on 2021-03-21, using debian 10 (buster), ocaml 4.12.0, core v0.14.1 and async v0.14.0.
+
+Now build
+
+    dune build --profile=release main.exe

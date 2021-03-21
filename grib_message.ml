@@ -109,7 +109,7 @@ end = struct
         (grib_handle @-> string @-> ptr double @-> ptr size_t @-> returning int)
     in
     let check_size_match got ~expect =
-      if got = Unsigned.Size_t.of_int expect
+      if [%compare.equal: Unsigned.Size_t.t] got (Unsigned.Size_t.of_int expect)
       then Ok ()
       else Or_error.errorf !"Size mismatch: got %{Unsigned.Size_t} expected %i" got expect
     in
@@ -190,13 +190,13 @@ let level t =
 
 (* Take care around threads. *)
 let with_temp_array = 
-  let mutex = Mutex.create () in
+  let mutex = Error_checking_mutex.create () in
   let arr = Bigarray.(Array1.create Float64 C_layout (720 * 361)) in
   fun f ->
-    Mutex.lock mutex;
+    Error_checking_mutex.lock mutex;
     protectx
       ~f arr
-      ~finally:(fun _ -> Mutex.unlock mutex)
+      ~finally:(fun _ -> Error_checking_mutex.unlock mutex)
 
 let blit =
   let module B = Bigarray in

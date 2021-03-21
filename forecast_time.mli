@@ -1,6 +1,6 @@
 open Core
 
-type t = Date.t * [ `h00 | `h06 | `h12 | `h18 ]
+type t = Date.t * [ `h00 | `h06 | `h12 | `h18 ] [@@deriving equal]
 
 val hour_int : t -> int
 val to_string_yyyymmddhh : t -> string

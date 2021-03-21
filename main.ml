@@ -29,7 +29,7 @@ let clean_directory ?directory ~keep () =
     >>=?= fun temp_files ->
     list ?directory ()
     >>|?| fun ds_times ->
-    List.filter ds_times ~f:(fun x -> x.fcst_time <> keep) @ temp_files
+    List.filter ds_times ~f:(fun x -> not (Forecast_time.equal x.fcst_time keep)) @ temp_files
     |> List.map ~f:(fun x -> x.path)
   end
   >>=?= fun to_remove ->

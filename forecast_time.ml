@@ -1,6 +1,6 @@
 open Core
 
-type t = Date.t * [ `h00 | `h06 | `h12 | `h18 ] [@@deriving sexp]
+type t = Date.t * [ `h00 | `h06 | `h12 | `h18 ] [@@deriving sexp, compare, equal]
 
 let incr =
   function
@@ -29,8 +29,8 @@ let to_string_yyyymmddhh = to_string_gen !"%04i%02i%02i%02i"
 let to_string_yyyymmdd_slash_hh = to_string_gen !"%04i%02i%02i/%02i"
 
 let () = 
-  assert (to_string_yyyymmddhh        (Date.of_string "1994-03-14", `h06) = "1994031406");
-  assert (to_string_yyyymmdd_slash_hh (Date.of_string "1994-03-14", `h06) = "19940314/06")
+  [%test_eq: string] (to_string_yyyymmddhh        (Date.of_string "1994-03-14", `h06)) "1994031406";
+  [%test_eq: string] (to_string_yyyymmdd_slash_hh (Date.of_string "1994-03-14", `h06)) "19940314/06"
 
 let of_string_yyyymmddhh s =
   let err s = Or_error.errorf "Bad Forecast time string (yyyymmddhh) %s" s in
@@ -52,7 +52,9 @@ let of_string_yyyymmddhh s =
     | _ -> err s
 
 let () =
-  assert (of_string_yyyymmddhh "1994031418" = Ok (Date.of_string "1994-03-14", `h18))
+  [%test_eq: t Or_error.t]
+    (of_string_yyyymmddhh "1994031418") 
+    (Ok (Date.of_string "1994-03-14", `h18))
 
 (* The first file appears at about +3h30, and it's all up by about +4h30 *)
 let expect_first_file_at (date, hour) =

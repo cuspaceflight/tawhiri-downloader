@@ -23,7 +23,7 @@ end = struct
 
   let index i = i / 3
 
-  let () = List.iter axis ~f:(fun h -> assert (of_int h = Ok h))
+  let () = List.iter axis ~f:(fun h -> [%test_eq: int Or_error.t] (of_int h) (Ok h))
   let () = List.iteri axis ~f:(fun idx hour -> assert (index hour = idx))
 end
 
@@ -123,9 +123,9 @@ end = struct
     |> Int.Table.of_alist_exn
     |> Hashtbl.find_exn
 
-  let () = List.iter mbs_pgrb2  ~f:(fun x -> assert (level_set x = Level_set.A))
-  let () = List.iter mbs_pgrb2b ~f:(fun x -> assert (level_set x = Level_set.B))
-  let () = List.iter axis ~f:(fun x -> assert (of_mb x = Ok x))
+  let () = List.iter mbs_pgrb2  ~f:(fun x -> [%test_eq: Level_set.t] (level_set x) A)
+  let () = List.iter mbs_pgrb2b ~f:(fun x -> [%test_eq: Level_set.t] (level_set x) B)
+  let () = List.iter axis ~f:(fun x -> [%test_eq: t Or_error.t] (of_mb x) (Ok x))
   let () = List.iteri axis ~f:(fun idx mb -> assert (index mb = idx))
   let () = assert (List.hd_exn axis = 1000)
   let () = assert (List.last_exn axis = 1)
@@ -134,6 +134,7 @@ end
 module Layout = struct
   type t =
     | Half_deg
+  [@@deriving compare]
 end
 
 module Deferred_result_infix = struct

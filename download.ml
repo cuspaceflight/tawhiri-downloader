@@ -18,8 +18,8 @@ module Urls = struct
   let index_file fcst_time levels hour =
     grib_file fcst_time levels hour ^ ".idx"
 
-  let index_file fcst_time levels hour = Uri.of_string (index_file fcst_time levels hour)
-  let grib_file  fcst_time levels hour = Uri.of_string (grib_file  fcst_time levels hour)
+  let index_file fcst_time levels hour = index_file fcst_time levels hour
+  let grib_file  fcst_time levels hour = grib_file  fcst_time levels hour
 end
 
 let throttled_get =
@@ -97,9 +97,13 @@ let filter_messages_and_assert_all_present =
       | [] -> Ok acc
       | msg :: messages ->
         let { Grib_index.offset = _; length = _; fcst_time; variable = _; level; hour } = msg in
-        if fcst_time <> expect_fcst_time || hour <> expect_hour
+        let time_and_hour_correct =
+          [%equal: Forecast_time.t] fcst_time expect_fcst_time
+          && [%compare.equal: Hour.t] hour expect_hour
+        in
+        if not time_and_hour_correct
         then Or_error.errorf !"unexpected message %{Grib_index.message_to_string}" msg
-        else if Level.level_set level = level_set
+        else if [%compare.equal: Level_set.t] (Level.level_set level) level_set
         then filter_messages ~acc:(msg :: acc) ~messages
         else filter_messages ~acc ~messages
     in
@@ -153,10 +157,10 @@ let get_message ~interrupt (msg : Grib_index.message) =
       >>|?= Grib_message.of_bigstring
       >>|?= fun message ->
       let matches =
-           Grib_message.variable message = Ok msg.variable
-        && Grib_message.hour     message = Ok msg.hour
-        && Grib_message.level    message = Ok msg.level
-        && Grib_message.layout   message = Ok Layout.Half_deg
+           [%compare.equal: Variable.t Or_error.t] (Grib_message.variable message) (Ok msg.variable)
+        && [%compare.equal: Hour.t     Or_error.t] (Grib_message.hour     message) (Ok msg.hour)
+        && [%compare.equal: Level.t    Or_error.t] (Grib_message.level    message) (Ok msg.level)
+        && [%compare.equal: Layout.t   Or_error.t] (Grib_message.layout   message) (Ok Half_deg)
       in
       if matches
       then Ok message

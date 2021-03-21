@@ -1,9 +1,10 @@
 (executable
   (name main)
   (libraries
+    threads
     core
     async
-    cohttp-async
+    curl
     ctypes.foreign
   )
   (link_flags (-cclib -leccodes))
