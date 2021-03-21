@@ -178,31 +178,3 @@ end
 module Layout = struct
   type t = Half_deg [@@deriving compare]
 end
-
-module Deferred_result_infix = struct
-  open Async
-
-  let ( >>|? ) = `no
-  let ( >>=? ) = `no
-
-  (* please forgive me. *)
-  let ( >>=?= ) x f =
-    x
-    >>= function
-    | Ok y -> f y
-    | Error _ as e -> return e
-  ;;
-
-  let ( >>|?= ) x f = x >>| fun x -> Result.bind x ~f
-
-  let ( >>=?| ) x f =
-    x
-    >>= function
-    | Ok x -> f x >>| fun x -> Ok x
-    | Error _ as e -> return e
-  ;;
-
-  let ( >>|?| ) x f = x >>| fun x -> Result.map x ~f
-  let ( >>-?= ) x f = Result.bind x ~f
-  let ( >>-?| ) x f = Result.map x ~f
-end

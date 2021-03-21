@@ -2,8 +2,7 @@ open Core
 open Async
 
 let rec read_response ?(accept_354 : unit option) pipe =
-  Pipe.read pipe
-  >>= function
+  match%bind Pipe.read pipe with
   | `Eof -> return (Or_error.error_string "EOF")
   | `Ok line ->
     if String.length line < 4
@@ -17,7 +16,9 @@ let rec read_response ?(accept_354 : unit option) pipe =
 ;;
 
 let read_response_exn ?accept_354 pipe =
-  read_response ?accept_354 pipe >>| Or_error.ok_exn
+  match%bind read_response ?accept_354 pipe with
+  | Error error -> Error.raise error
+  | Ok response -> return response
 ;;
 
 let server = Socket.Address.Inet.create Unix.Inet_addr.localhost ~port:25
@@ -44,11 +45,12 @@ let is_legal_line = function
     loop s 0
 ;;
 
-let rec are_legal_lines =
-  let open Result.Monad_infix in
-  function
+let rec are_legal_lines = function
   | [] -> Ok ()
-  | line :: lines -> is_legal_line line >>= fun () -> are_legal_lines lines
+  | line :: lines ->
+    (match is_legal_line line with
+    | Error _ as error -> error
+    | Ok () -> are_legal_lines lines)
 ;;
 
 let default_helo = "tawhiri-downloader"
@@ -81,20 +83,21 @@ let send_mail
             let reader = Reader.lines reader in
             let writer = writer_lines_crlf writer in
             let command ?accept_354 s =
-              Pipe.write writer s >>= fun () -> read_response_exn reader ?accept_354
+              let%bind () = Pipe.write writer s in
+              read_response_exn reader ?accept_354
             in
-            read_response_exn reader
-            >>= fun () ->
-            command ("HELO " ^ helo)
-            >>= fun () ->
-            command ("MAIL FROM:" ^ mail_from)
-            >>= fun () ->
-            Deferred.List.iter rcpt_to ~how:`Sequential ~f:(fun s ->
-                command ("RCPT TO:" ^ s))
-            >>= fun () ->
-            command ~accept_354:() "DATA"
-            >>= fun () ->
-            Deferred.List.iter lines ~how:`Sequential ~f:(Pipe.write writer)
-            >>= fun () ->
-            command "." >>= fun () -> command "QUIT" >>= fun () -> Pipe.closed reader))
+            let%bind () = read_response_exn reader in
+            let%bind () = command ("HELO " ^ helo) in
+            let%bind () = command ("MAIL FROM:" ^ mail_from) in
+            let%bind () =
+              Deferred.List.iter rcpt_to ~how:`Sequential ~f:(fun s ->
+                  command ("RCPT TO:" ^ s))
+            in
+            let%bind () = command ~accept_354:() "DATA" in
+            let%bind () =
+              Deferred.List.iter lines ~how:`Sequential ~f:(Pipe.write writer)
+            in
+            let%bind () = command "." in
+            let%bind () = command "QUIT" in
+            Pipe.closed reader))
 ;;

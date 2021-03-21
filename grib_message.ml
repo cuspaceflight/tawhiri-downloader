@@ -75,18 +75,19 @@ end = struct
       foreign "grib_get_long" (grib_handle @-> string @-> ptr long @-> returning int)
     in
     fun (handle, _) key ->
-      let open Result.Monad_infix in
       let temp = allocate long (Signed.Long.of_int 0) in
-      grib_check (f handle key temp) >>| fun () -> Signed.Long.to_int64 !@temp
+      match grib_check (f handle key temp) with
+      | Error _ as error -> error
+      | Ok () -> Ok (Signed.Long.to_int64 !@temp)
   ;;
 
   let grib_get_int t key =
-    let open Result.Monad_infix in
-    grib_get_long t key
-    >>= fun res ->
-    match Int64.to_int res with
-    | Some x -> Ok x
-    | None -> error_s [%sexp "variable Int64.to_int", (key : string), (res : Int64.t)]
+    match grib_get_long t key with
+    | Error _ as error -> error
+    | Ok res ->
+      (match Int64.to_int res with
+      | Some x -> Ok x
+      | None -> error_s [%sexp "variable Int64.to_int", (key : string), (res : Int64.t)])
   ;;
 
   let grib_get_double =
@@ -94,9 +95,10 @@ end = struct
       foreign "grib_get_double" (grib_handle @-> string @-> ptr double @-> returning int)
     in
     fun (handle, _) key ->
-      let open Result.Monad_infix in
       let temp = allocate double 0. in
-      grib_check (f handle key temp) >>| fun () -> !@temp
+      match grib_check (f handle key temp) with
+      | Error _ as error -> error
+      | Ok () -> Ok !@temp
   ;;
 
   let grib_get_double_array_into =
@@ -115,18 +117,16 @@ end = struct
       else Or_error.errorf !"Size mismatch: got %{Unsigned.Size_t} expected %i" got expect
     in
     fun (handle, _) key target ->
-      let open Result.Monad_infix in
       let len_temp = allocate size_t Unsigned.Size_t.zero in
-      grib_check (f1 handle key len_temp)
-      >>= fun () ->
+      let%bind.Result () = grib_check (f1 handle key len_temp) in
       let len_expect = Bigarray.Array1.dim target in
-      check_size_match !@len_temp ~expect:len_expect
-      >>= fun () ->
+      let%bind.Result () = check_size_match !@len_temp ~expect:len_expect in
       let vals = array_of_bigarray array1 target in
       assert (CArray.length vals = len_expect);
       let len_temp = allocate size_t (Unsigned.Size_t.of_int len_expect) in
-      grib_check (f2 handle key (CArray.start vals) len_temp)
-      >>= fun () -> check_size_match !@len_temp ~expect:len_expect >>= fun () -> Ok ()
+      let%bind.Result () = grib_check (f2 handle key (CArray.start vals) len_temp) in
+      let%bind.Result () = check_size_match !@len_temp ~expect:len_expect in
+      Ok ()
   ;;
 end
 
@@ -135,14 +135,10 @@ type t = F.grib_handle_and_data
 let of_bigstring = F.grib_handle_new_from_message
 
 let variable t =
-  let open Result.Monad_infix in
   let g = F.grib_get_int t in
-  g "discipline"
-  >>= fun a ->
-  g "parameterCategory"
-  >>= fun b ->
-  g "parameterNumber"
-  >>= fun c ->
+  let%bind.Result a = g "discipline" in
+  let%bind.Result b = g "parameterCategory" in
+  let%bind.Result c = g "parameterNumber" in
   match a, b, c with
   | 0, 3, 5 -> Ok Variable.Height
   | 0, 2, 2 -> Ok Variable.U_wind
@@ -151,31 +147,19 @@ let variable t =
 ;;
 
 let layout t =
-  let open Result.Monad_infix in
   let gi = F.grib_get_int t in
   let gd = F.grib_get_double t in
-  gi "iScansNegatively"
-  >>= fun a ->
-  gi "jScansPositively"
-  >>= fun b ->
-  gi "Ni"
-  >>= fun c ->
-  gi "Nj"
-  >>= fun d ->
-  gd "latitudeOfFirstGridPointInDegrees"
-  >>= fun e ->
-  gd "longitudeOfFirstGridPointInDegrees"
-  >>= fun f ->
-  gd "latitudeOfLastGridPointInDegrees"
-  >>= fun g ->
-  gd "longitudeOfLastGridPointInDegrees"
-  >>= fun h ->
-  gd "iDirectionIncrementInDegrees"
-  >>= fun i ->
-  gd "jDirectionIncrementInDegrees"
-  >>= fun j ->
-  gi "numberOfValues"
-  >>= fun k ->
+  let%bind.Result a = gi "iScansNegatively" in
+  let%bind.Result b = gi "jScansPositively" in
+  let%bind.Result c = gi "Ni" in
+  let%bind.Result d = gi "Nj" in
+  let%bind.Result e = gd "latitudeOfFirstGridPointInDegrees" in
+  let%bind.Result f = gd "longitudeOfFirstGridPointInDegrees" in
+  let%bind.Result g = gd "latitudeOfLastGridPointInDegrees" in
+  let%bind.Result h = gd "longitudeOfLastGridPointInDegrees" in
+  let%bind.Result i = gd "iDirectionIncrementInDegrees" in
+  let%bind.Result j = gd "jDirectionIncrementInDegrees" in
+  let%bind.Result k = gi "numberOfValues" in
   match a, b, c, d, e, f, g, h, i, j, k with
   | 0, 0, 720, 361, 90., 0., -90., 359.5, 0.5, 0.5, 259920 -> Ok Layout.Half_deg
   | a, b, c, d, e, f, g, h, i, j, k ->
@@ -195,28 +179,20 @@ let layout t =
 ;;
 
 let hour t =
-  let open Result.Monad_infix in
   let gi = F.grib_get_int t in
-  gi "stepUnits"
-  >>= fun a ->
-  gi "forecastTime"
-  >>= fun b ->
+  let%bind.Result a = gi "stepUnits" in
+  let%bind.Result b = gi "forecastTime" in
   match a, b with
   | 1, n -> Hour.of_int n
   | a, b -> Or_error.errorf "couldn't identify hour %i %i" a b
 ;;
 
 let level t =
-  let open Result.Monad_infix in
   let gi = F.grib_get_int t in
-  gi "typeOfFirstFixedSurface"
-  >>= fun a ->
-  gi "scaleFactorOfFirstFixedSurface"
-  >>= fun b ->
-  gi "scaledValueOfFirstFixedSurface"
-  >>= fun c ->
-  gi "level"
-  >>= fun d ->
+  let%bind.Result a = gi "typeOfFirstFixedSurface" in
+  let%bind.Result b = gi "scaleFactorOfFirstFixedSurface" in
+  let%bind.Result c = gi "scaledValueOfFirstFixedSurface" in
+  let%bind.Result d = gi "level" in
   match a, b, c, d with
   | 100, 0, n, m when n = m * 100 -> Level.of_mb m
   | a, b, c, d -> Or_error.errorf "couldn't identify level %i %i %i %i" a b c d
@@ -234,24 +210,23 @@ let with_temp_array =
 let blit =
   let module B = Bigarray in
   let module B2 = Bigarray.Array2 in
-  let open Result.Monad_infix in
   let check_dims dst =
     if B2.dim1 dst = 361 && B2.dim2 dst = 720
     then Ok ()
     else Or_error.error_string "Output array has bad dims"
   in
   fun t (dst : (float, B.float32_elt, B.c_layout) B2.t) ->
-    check_dims dst
-    >>= fun () ->
-    layout t
-    >>= fun Layout.Half_deg ->
+    let%bind.Result () = check_dims dst in
+    let%bind.Result Half_deg = layout t in
     with_temp_array (fun temp ->
-        F.grib_get_double_array_into t "values" temp
-        >>| fun () ->
-        for lat = 0 to 361 - 1 do
-          for lon = 0 to 720 - 1 do
-            let v = Bigarray.Array1.get temp (((360 - lat) * 720) + lon) in
-            B2.set dst lat lon v
-          done
-        done)
+        match F.grib_get_double_array_into t "values" temp with
+        | Error _ as error -> error
+        | Ok () ->
+          for lat = 0 to 361 - 1 do
+            for lon = 0 to 720 - 1 do
+              let v = Bigarray.Array1.get temp (((360 - lat) * 720) + lon) in
+              B2.set dst lat lon v
+            done
+          done;
+          Ok ())
 ;;

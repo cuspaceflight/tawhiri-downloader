@@ -21,25 +21,28 @@ module Filename = struct
     }
 
   let list ?(directory = default_directory) ?(prefix = "") ?(suffix = "") () =
-    let open Deferred_result_infix in
     let len_ps = String.length prefix + String.length suffix in
     let sub s =
       String.sub s ~pos:(String.length prefix) ~len:(String.length s - len_ps)
     in
-    Monitor.try_with_or_error (fun () -> Sys.ls_dir directory)
-    >>|?| List.filter_map ~f:(fun basename ->
-              let plausible =
-                String.length basename > len_ps
-                && String.is_prefix ~prefix basename
-                && String.is_suffix ~suffix basename
-              in
-              if not plausible
-              then None
-              else (
-                match Forecast_time.of_string_yyyymmddhh (sub basename) with
-                | Ok fcst_time ->
-                  Some { fcst_time; basename; path = directory ^/ basename }
-                | Error _ -> None))
+    match%bind Monitor.try_with_or_error (fun () -> Sys.ls_dir directory) with
+    | Error _ as error -> return error
+    | Ok basenames ->
+      let basenames =
+        List.filter_map basenames ~f:(fun basename ->
+            let plausible =
+              String.length basename > len_ps
+              && String.is_prefix ~prefix basename
+              && String.is_suffix ~suffix basename
+            in
+            if not plausible
+            then None
+            else (
+              match Forecast_time.of_string_yyyymmddhh (sub basename) with
+              | Ok fcst_time -> Some { fcst_time; basename; path = directory ^/ basename }
+              | Error _ -> None))
+      in
+      return (Ok basenames)
   ;;
 end
 
@@ -109,20 +112,22 @@ let msync =
   fun (t : t) ->
     let data = coerce (bigarray_start genarray t) in
     let ms_sync = 4 in
-    In_thread.run ~name:"msync" (fun () ->
-        let start = Time.now () in
-        let r =
-          Or_error.try_with (fun () -> f data (Unsigned.Size_t.of_int len_bytes) ms_sync)
-        in
-        let delta = Time.diff (Time.now ()) start in
-        r, delta)
-    >>| fun (r, delta) ->
+    let%bind result, wall_time_taken =
+      In_thread.run ~name:"msync" (fun () ->
+          let start = Time.now () in
+          let result =
+            Or_error.try_with (fun () ->
+                f data (Unsigned.Size_t.of_int len_bytes) ms_sync)
+          in
+          let wall_time_taken = Time.diff (Time.now ()) start in
+          result, wall_time_taken)
+    in
     Log.Global.debug
       !"msync took %{Time.Span} and returned %{sexp:int Or_error.t}"
-      delta
-      r;
-    match r with
-    | Ok 0 -> Ok ()
-    | Ok x -> Or_error.errorf !"msync returned %i yet didn't set errno?" x
-    | Error _ as err -> err
+      wall_time_taken
+      result;
+    match result with
+    | Ok 0 -> return (Ok ())
+    | Ok x -> return (Or_error.errorf !"msync returned %i yet didn't set errno?" x)
+    | Error _ as err -> return err
 ;;
