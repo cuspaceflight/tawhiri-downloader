@@ -275,9 +275,7 @@ let download ~interrupt ?directory forecast_time =
   let temp_filename = make_filename ~prefix:Dataset_file.Filename.downloader_prefix () in
   let final_filename = make_filename () in
   Log.Global.debug "Temp filename will be %s" temp_filename;
-  match%bind
-    download_to_temp_filename ~interrupt ~temp_filename forecast_time
-  with
+  match%bind download_to_temp_filename ~interrupt ~temp_filename forecast_time with
   | Ok () ->
     Log.Global.debug "Renaming %s -> %s" temp_filename final_filename;
     Monitor.try_with_or_error (fun () -> Sys.rename temp_filename final_filename)
