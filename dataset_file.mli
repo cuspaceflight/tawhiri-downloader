@@ -6,6 +6,7 @@ type t
 
 module Filename : sig
   type 'a with_options = ?directory:string -> ?prefix:string -> ?suffix:string -> 'a
+
   val default_directory : string
   val downloader_prefix : string
   val one : (Forecast_time.t -> string) with_options
@@ -15,13 +16,16 @@ module Filename : sig
     ; basename : string
     ; path : string
     }
+
   val list : (unit -> list_item list Or_error.t Deferred.t) with_options
 end
 
 val shape : int * int * int * int * int
 val shape_arr : int array
 
-type mode = RO | RW
+type mode =
+  | RO
+  | RW
 
 val create : filename:string -> mode -> t Or_error.t Deferred.t
 

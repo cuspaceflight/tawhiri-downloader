@@ -13,30 +13,27 @@ module Urls = struct
       | A -> ""
       | B -> "b"
     in
-    forecast_dir fcst_time ^ sprintf "gfs.t%02iz.pgrb2%s.0p50.f%03i" fcst_hr maybe_b (Hour.to_int hour)
+    forecast_dir fcst_time
+    ^ sprintf "gfs.t%02iz.pgrb2%s.0p50.f%03i" fcst_hr maybe_b (Hour.to_int hour)
+  ;;
 
-  let index_file fcst_time levels hour =
-    grib_file fcst_time levels hour ^ ".idx"
-
+  let index_file fcst_time levels hour = grib_file fcst_time levels hour ^ ".idx"
   let index_file fcst_time levels hour = index_file fcst_time levels hour
-  let grib_file  fcst_time levels hour = grib_file  fcst_time levels hour
+  let grib_file fcst_time levels hour = grib_file fcst_time levels hour
 end
 
 let throttled_get =
   let throttle = Throttle.create ~continue_on_error:true ~max_concurrent_jobs:5 in
   fun uri ~interrupt ~range ->
-    Throttle.enqueue throttle (fun () ->
-      Http.get uri ~interrupt ~range
-    )
+    Throttle.enqueue throttle (fun () -> Http.get uri ~interrupt ~range)
+;;
 
 let interrupted_error = return (Or_error.error_string "interrupted")
 
 let with_retries ~name ~f ~attempt_timeout ~interrupt =
   let next_backoff x =
-    let open Time.Span in 
-    if x < of_sec 100.
-    then scale x 2.
-    else x
+    let open Time.Span in
+    if x < of_sec 100. then scale x 2. else x
   in
   let rec loop ~backoff =
     let interrupt_this = Ivar.create () in
@@ -67,14 +64,14 @@ let with_retries ~name ~f ~attempt_timeout ~interrupt =
     | `Timeout ->
       Log.Global.debug !"%s Timeout (backoff %{Time.Span})" name backoff;
       retry ()
-    | `Interrupted ->
-      interrupted_error
+    | `Interrupted -> interrupted_error
   in
   loop ~backoff:(Time.Span.of_sec 5.)
+;;
 
 let filter_messages_and_assert_all_present =
   let expect_count =
-    let f ls = (List.length Variable.axis) * (List.length (Level.ts_in ls)) in
+    let f ls = List.length Variable.axis * List.length (Level.ts_in ls) in
     let a = f Level_set.A in
     let b = f Level_set.B in
     function
@@ -84,9 +81,7 @@ let filter_messages_and_assert_all_present =
   let contains_dup =
     let open Grib_index in
     let compare a b =
-      [%compare: Variable.t * Level.t]
-        (a.variable, a.level)
-        (b.variable, b.level)
+      [%compare: Variable.t * Level.t] (a.variable, a.level) (b.variable, b.level)
     in
     List.contains_dup ~compare
   in
@@ -96,7 +91,9 @@ let filter_messages_and_assert_all_present =
       match messages with
       | [] -> Ok acc
       | msg :: messages ->
-        let { Grib_index.offset = _; length = _; fcst_time; variable = _; level; hour } = msg in
+        let { Grib_index.offset = _; length = _; fcst_time; variable = _; level; hour } =
+          msg
+        in
         let time_and_hour_correct =
           [%equal: Forecast_time.t] fcst_time expect_fcst_time
           && [%compare.equal: Hour.t] hour expect_hour
@@ -111,25 +108,30 @@ let filter_messages_and_assert_all_present =
     >>= fun messages ->
     if contains_dup messages
     then Or_error.error_string "Duplicate messages in index"
-    else begin
+    else (
       let count = List.length messages in
       assert (count <= expect_count level_set);
       if count <> expect_count level_set
       then Or_error.error_string "Messages missing from index"
-      else Ok messages
-    end
+      else Ok messages)
+;;
 
 let get_index ~interrupt fcst_time level_set hour =
   with_retries
-    ~name:(
-      sprintf
-        !"Download index %{Forecast_time#yyyymmddhh} %{Level_set} %{Hour}"
-        fcst_time level_set hour
-    )
-    ~interrupt ~attempt_timeout:(Time.Span.of_sec 10.)
+    ~name:
+      (sprintf
+         !"Download index %{Forecast_time#yyyymmddhh} %{Level_set} %{Hour}"
+         fcst_time
+         level_set
+         hour)
+    ~interrupt
+    ~attempt_timeout:(Time.Span.of_sec 10.)
     ~f:(fun ~interrupt () ->
       let open Deferred_result_infix in
-      let bigstring_to_string b = Bigstring.to_string b (* eliminate optional arguments *) in
+      let bigstring_to_string b =
+        Bigstring.to_string b
+        (* eliminate optional arguments *)
+      in
       throttled_get
         (Urls.index_file fcst_time level_set hour)
         ~range:(`all_with_max_len (128 * 1024))
@@ -141,13 +143,14 @@ let get_index ~interrupt fcst_time level_set hour =
         messages
         ~level_set
         ~expect_fcst_time:fcst_time
-        ~expect_hour:hour
-    )
+        ~expect_hour:hour)
+;;
 
 let get_message ~interrupt (msg : Grib_index.message) =
   with_retries
     ~name:("Download message " ^ Grib_index.message_to_string msg)
-    ~interrupt ~attempt_timeout:(Time.Span.of_sec 60.)
+    ~interrupt
+    ~attempt_timeout:(Time.Span.of_sec 60.)
     ~f:(fun ~interrupt () ->
       let open Deferred_result_infix in
       throttled_get
@@ -157,23 +160,28 @@ let get_message ~interrupt (msg : Grib_index.message) =
       >>|?= Grib_message.of_bigstring
       >>|?= fun message ->
       let matches =
-           [%compare.equal: Variable.t Or_error.t] (Grib_message.variable message) (Ok msg.variable)
-        && [%compare.equal: Hour.t     Or_error.t] (Grib_message.hour     message) (Ok msg.hour)
-        && [%compare.equal: Level.t    Or_error.t] (Grib_message.level    message) (Ok msg.level)
-        && [%compare.equal: Layout.t   Or_error.t] (Grib_message.layout   message) (Ok Half_deg)
+        [%compare.equal: Variable.t Or_error.t]
+          (Grib_message.variable message)
+          (Ok msg.variable)
+        && [%compare.equal: Hour.t Or_error.t] (Grib_message.hour message) (Ok msg.hour)
+        && [%compare.equal: Level.t Or_error.t]
+             (Grib_message.level message)
+             (Ok msg.level)
+        && [%compare.equal: Layout.t Or_error.t]
+             (Grib_message.layout message)
+             (Ok Half_deg)
       in
       if matches
       then Ok message
-      else Or_error.errorf "GRIB message contents did not match index"
-    )
+      else Or_error.errorf "GRIB message contents did not match index")
+;;
 
 let download_raw ~interrupt ~filename fcst_time =
   let open Deferred_result_infix in
   Log.Global.debug !"Begin download of %{Forecast_time#yyyymmddhh}" fcst_time;
   Dataset_file.create ~filename RW
   >>=?= fun ds ->
-  let maybe_wait =
-    function
+  let maybe_wait = function
     | Some x -> x
     | None -> return (Ok ())
   in
@@ -183,8 +191,7 @@ let download_raw ~interrupt ~filename fcst_time =
     let module G = Grib_index in
     let slice = Dataset_file.slice ds msg.G.hour msg.G.level msg.G.variable in
     In_thread.run ~name:"blit" (fun () -> Grib_message.blit grib slice)
-    >>|?| fun () ->
-    Log.Global.debug !"Blitted %{Grib_index.message_to_string}" msg
+    >>|?| fun () -> Log.Global.debug !"Blitted %{Grib_index.message_to_string}" msg
   in
   let index_job (hour, level_set) =
     let interrupt_this = Ivar.create () in
@@ -192,9 +199,9 @@ let download_raw ~interrupt ~filename fcst_time =
     let interrupt = Ivar.read interrupt_this in
     get_index ~interrupt fcst_time level_set hour
     >>=?= fun messages ->
-    let (last, rest) =
+    let last, rest =
       match List.rev messages with
-      | last :: rest -> (last, List.rev rest)
+      | last :: rest -> last, List.rev rest
       | [] -> assert false
     in
     (* wait for the last message in the file to complete first, so that
@@ -204,13 +211,11 @@ let download_raw ~interrupt ~filename fcst_time =
     let rest_results = List.map rest ~f:(message_job ~interrupt) in
     let error_early_warning =
       Deferred.create (fun ivar ->
-        List.iter rest_results ~f:(fun res ->
-          res
-          >>> function
-          | Ok _ -> ()
-          | Error e -> Ivar.fill_if_empty ivar e
-        )
-      )
+          List.iter rest_results ~f:(fun res ->
+              res
+              >>> function
+              | Ok _ -> ()
+              | Error e -> Ivar.fill_if_empty ivar e))
     in
     choose
       [ choice (Deferred.all rest_results) Or_error.combine_errors_unit
@@ -225,46 +230,41 @@ let download_raw ~interrupt ~filename fcst_time =
      * to be done before trying the next. *)
     match waiting with
     | [] ->
-      maybe_wait ongoing1 >>=?= fun () ->
-      maybe_wait ongoing2 >>=?= fun () ->
-      return (Ok ())
+      maybe_wait ongoing1
+      >>=?= fun () -> maybe_wait ongoing2 >>=?= fun () -> return (Ok ())
     | hour_level_set :: waiting ->
-      maybe_wait ongoing1 >>=?= fun () ->
+      maybe_wait ongoing1
+      >>=?= fun () ->
       let ongoing1 = ongoing2 in
       let ongoing2 = Some (index_job hour_level_set) in
       loop ~ongoing1 ~ongoing2 ~waiting
   in
   let jobs =
-    List.cartesian_product Hour.axis Level_set.([A; B])
+    List.cartesian_product Hour.axis Level_set.[ A; B ]
     |> List.sort ~compare:(fun (h1, _) (h2, _) -> Hour.compare h1 h2)
   in
-  loop ~ongoing1:None ~ongoing2:None ~waiting:jobs
-  >>=?= fun () ->
-  Dataset_file.msync ds
+  loop ~ongoing1:None ~ongoing2:None ~waiting:jobs >>=?= fun () -> Dataset_file.msync ds
+;;
 
 let download ~interrupt ?directory forecast_time =
   let open Deferred_result_infix in
-  let (temp_filename, final_filename) =
+  let temp_filename, final_filename =
     let open Dataset_file.Filename in
-    ( one ?directory ~prefix:downloader_prefix forecast_time
-    , one ?directory forecast_time
-    )
+    one ?directory ~prefix:downloader_prefix forecast_time, one ?directory forecast_time
   in
   Log.Global.debug "Temp filename will be %s" temp_filename;
-  begin
-    download_raw ~interrupt ~filename:temp_filename forecast_time
-    >>=?= fun () ->
-    Log.Global.debug "Renaming %s -> %s" temp_filename final_filename;
-    Monitor.try_with_or_error (fun () -> Sys.rename temp_filename final_filename)
-  end
+  download_raw ~interrupt ~filename:temp_filename forecast_time
+  >>=?= (fun () ->
+          Log.Global.debug "Renaming %s -> %s" temp_filename final_filename;
+          Monitor.try_with_or_error (fun () -> Sys.rename temp_filename final_filename))
   >>= function
   | Ok () as ok -> return ok
   | Error _ as dl_err ->
     Monitor.try_with_or_error (fun () -> Sys.remove temp_filename)
     >>= fun delete_res ->
-    begin
-      match delete_res with
-      | Ok () -> Log.Global.debug "Deleted %s" temp_filename
-      | Error e -> Log.Global.debug !"Failed to delete temp file %s: %{Error#mach}" temp_filename e
-    end;
+    (match delete_res with
+    | Ok () -> Log.Global.debug "Deleted %s" temp_filename
+    | Error e ->
+      Log.Global.debug !"Failed to delete temp file %s: %{Error#mach}" temp_filename e);
     return dl_err
+;;

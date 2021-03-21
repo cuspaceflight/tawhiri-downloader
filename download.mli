@@ -3,7 +3,7 @@ open Async
 open Common
 
 val get_index
-  :  interrupt:unit Deferred.t 
+  :  interrupt:unit Deferred.t
   -> Forecast_time.t
   -> Level_set.t
   -> Hour.t
