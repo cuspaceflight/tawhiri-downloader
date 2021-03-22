@@ -310,6 +310,11 @@ let get url ~interrupt ~range =
   Async_multi_integration.initialise_once ();
   let curl_easy = Curl.init () in
   Curl.set_url curl_easy url;
+  (match range with
+  | `all_with_max_len _ -> ()
+  | `exactly_pos_len (pos, len) ->
+    let range_header = sprintf "Range: bytes=%i-%i" pos (pos + len - 1) in
+    Curl.set_httpheader curl_easy [ range_header ]);
   let response_too_long_ivar = Ivar.create () in
   Curl.set_writefunction curl_easy (fun s ->
       (match Iobuf.Fill.stringo output_buffer s with
