@@ -215,10 +215,6 @@ module Async_multi_integration = struct
           | POLL_OUT -> "POLL_OUT"
           | POLL_INOUT -> "POLL_INOUT"
         in
-        Core.printf
-          !"set_socket_function %{sexp:Core.Unix.File_descr.t} %s\n%!"
-          fd
-          poll_str;
         (* ocurl throws away exns, so we have to send them up to the main monitor. *)
         match socket_function_exn fd poll with
         | exception exn -> Monitor.send_exn Monitor.main exn
@@ -232,7 +228,6 @@ module Async_multi_integration = struct
       match Epoll.epoll_wait epoll ~timeout:0 with
       | None -> failwith "epoll is ready, but epoll_wait yielded nothing?"
       | Some { fd; in_; out; hup } ->
-        Core.printf !"fd ready %{sexp:Core.Unix.File_descr.t} %b %b %b\n%!" fd in_ out hup;
         let fd_status : Curl.Multi.fd_status =
           match in_ || hup, out with
           | false, false -> EV_AUTO

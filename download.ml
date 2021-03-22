@@ -3,7 +3,7 @@ open Async
 open Common
 
 module Urls = struct
-  let base_url = "https://www.nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod"
+  let base_url = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod"
   let forecast_dir = sprintf !"%s/gfs.%{Forecast_time#yyyymmdd_slash_hh}/" base_url
 
   let grib_file fcst_time levels hour =
