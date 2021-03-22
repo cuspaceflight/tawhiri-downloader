@@ -329,9 +329,24 @@ let get url ~interrupt ~range =
       ]
   in
   Async_multi_integration.remove_idempotent curl_easy;
+  let classified_curl_result =
+    match result with
+    | `Complete CURLE_OK ->
+      let code = Curl.get_responsecode curl_easy in
+      (match code >= 200 && code < 300 with
+      | true -> Ok ()
+      | false -> error_s [%message "HTTP error code from server" ~url (code : int)])
+    | `Complete error ->
+      error_s [%message "curl error" ~url (range : range) ~error:(Curl.strerror error)]
+    | `Response_too_long -> error_s [%message "response too long" ~url (range : range)]
+    | `Interrupt -> Or_error.error_string "interrupted"
+  in
   Curl.cleanup curl_easy;
-  match result with
-  | `Complete CURLE_OK ->
+  let curl_easy = `Cleaned_up in
+  let `Cleaned_up = curl_easy in
+  match classified_curl_result with
+  | Error _ as error -> return error
+  | Ok () ->
     Iobuf.flip_lo output_buffer;
     let length_is_ok =
       match range with
@@ -348,10 +363,4 @@ let get url ~interrupt ~range =
                ~url
                (range : range)
                ~actual:(Iobuf.length output_buffer : int)]))
-  | `Complete error ->
-    return
-      (error_s [%message "curl error" ~url (range : range) ~error:(Curl.strerror error)])
-  | `Response_too_long ->
-    return (error_s [%message "response too long" ~url (range : range)])
-  | `Interrupt -> return (Or_error.error_string "interrupted")
 ;;
