@@ -207,14 +207,6 @@ module Async_multi_integration = struct
       | POLL_INOUT -> add_or_mod_epoll fd Inout
     in
     Curl.Multi.set_socket_function curl_multi (fun fd poll ->
-        let poll_str =
-          match poll with
-          | POLL_NONE -> "POLL_NONE"
-          | POLL_REMOVE -> "POLL_REMOVE"
-          | POLL_IN -> "POLL_IN"
-          | POLL_OUT -> "POLL_OUT"
-          | POLL_INOUT -> "POLL_INOUT"
-        in
         (* ocurl throws away exns, so we have to send them up to the main monitor. *)
         match socket_function_exn fd poll with
         | exception exn -> Monitor.send_exn Monitor.main exn
