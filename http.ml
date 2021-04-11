@@ -3,9 +3,9 @@ open Async
 
 (* Cohttp blows---in particular,
    doesn't have good timeout/interrupt support for requests.
-   
+
    httpaf can't do SSL.
-   
+
    OCurl's bindings to curl-multi look great, except integrating them with async is
    _really_ tricky. This is what we have for now... *)
 type range =
@@ -18,7 +18,7 @@ type range =
    function with POLL_REMOVE, which means it will already be gone from the epoll and
    removal will fail. I could not find a single ocaml epoll library that can tolerate
    this, and it's 11pm, so you have the following:
-   
+
    Other ideas: dup the fds and let async take ownership of the dupp'd fd; rewrite in
    python; magic a good OCaml HTTP library out of somewhere. *)
 module Epoll : sig
@@ -250,7 +250,7 @@ module Async_multi_integration = struct
     let timer_function_exn after_millis =
       (* there's a reentrancy bug in time_source where if you try to reschedule an event
          from within its fire function, it will just be dropped. Sigh.
-       
+
          Avoid by explicitly aborting and recreating, rather than using
          [reschedule_after]. We should be able to use [reschedule_after] once it's fixed. *)
       (match !timer_event with

@@ -72,7 +72,7 @@ module Level : sig
 
   (** For the [t]s that appear in both level sets, we've arbitrarily assigned
       them to exactly one; [ts_in A] and [ts_in B] partition the levels and
-      you're guaranteed that [List.mem (ts_in (level_set t)) t] and 
+      you're guaranteed that [List.mem (ts_in (level_set t)) t] and
       [List.forall (ts_in ls) ~f:(fun t -> level_set t = ls). *)
   val ts_in : Level_set.t -> t list
 
