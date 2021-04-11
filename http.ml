@@ -203,7 +203,7 @@ module Async_multi_integration = struct
       | POLL_NONE | POLL_REMOVE ->
         (* curl sometimes (the resolver?) calls this _after_ closing the fd. *)
         (try Epoll.ctl epoll fd Del with
-        | Unix.Unix_error (ENOENT, _, _) -> ())
+        | Unix.Unix_error (EBADF, _, _) -> ())
       | POLL_IN -> add_or_mod_epoll fd In
       | POLL_OUT -> add_or_mod_epoll fd Out
       | POLL_INOUT -> add_or_mod_epoll fd Inout
