@@ -184,24 +184,26 @@ module Async_multi_integration = struct
   ;;
 
   let setup_epoll_integration () =
-    (* [num_file_descrs] is not actually a capacity thing, it's a limit on the max int value
-       of the FD. I CBA dealing with this right now. Going up to 1024 is implausible. *)
     let epoll = Epoll.create () in
-    let things_in_epoll = Core.Unix.File_descr.Hash_set.create () in
     let add_or_mod_epoll fd flags =
-      match Hash_set.mem things_in_epoll fd with
-      | true -> Epoll.ctl epoll fd (Mod flags)
-      | false ->
-        Epoll.ctl epoll fd (Add flags);
-        Hash_set.strict_add_exn things_in_epoll fd
+      (* I used to have a version of this where we'd track whether or not a fd was in the
+         epoll, and appropriately invoke [Add] or [Mod] in order to effect the right
+         change. And still we'd get ENOENT. I think curl was closing the file descriptors
+         without telling us, but I'm not sure. In any case, I don't care.
+
+         If we mess this up, most likely we'll just fail to track the fds for a specific
+         request and time out, and then retry it. Worst case, we'll infinite loop repeatedly
+         epolling the same fd, waking up, doing no work, and going back to sleep, and waking
+         up immediately again, until it times out. *)
+      try Epoll.ctl epoll fd (Mod flags) with
+      | Unix.Unix_error (ENOENT, _, _) -> Epoll.ctl epoll fd (Add flags)
     in
     let socket_function_exn fd (poll : Curl.Multi.poll) =
       match poll with
       | POLL_NONE | POLL_REMOVE ->
-        Hash_set.remove things_in_epoll fd;
         (* curl sometimes (the resolver?) calls this _after_ closing the fd. *)
         (try Epoll.ctl epoll fd Del with
-        | _ -> ())
+        | Unix.Unix_error (ENOENT, _, _) -> ())
       | POLL_IN -> add_or_mod_epoll fd In
       | POLL_OUT -> add_or_mod_epoll fd Out
       | POLL_INOUT -> add_or_mod_epoll fd Inout
