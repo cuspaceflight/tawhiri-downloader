@@ -1,7 +1,7 @@
 open Core
 open Async
 
-let one_main ?directory ?log_level forecast_time =
+let one_main ?directory ?log_level base_url forecast_time =
   Option.iter log_level ~f:Log.Global.set_level;
   let interrupt =
     let signal = Ivar.create () in
@@ -15,7 +15,7 @@ let one_main ?directory ?log_level forecast_time =
     Log.Global.error "Interrupt: %s" reason;
     Deferred.unit
   in
-  let%bind res = Download.download ~interrupt ?directory forecast_time in
+  let%bind res = Download.download ~interrupt ?directory base_url forecast_time in
   let%bind () = Log.Global.flushed () in
   return (Or_error.ok_exn res)
 ;;
@@ -75,7 +75,7 @@ let send_mail, wait_for_mails =
   send_mail, wait_for_mails
 ;;
 
-let daemon_main ?directory ?log_level ?first_fcst_time ~error_rcpt_to () =
+let daemon_main ?directory ?log_level ?first_fcst_time ~error_rcpt_to ~base_url () =
   Option.iter log_level ~f:Log.Global.set_level;
   let send_mail = send_mail ~error_rcpt_to in
   let first_fcst_time =
@@ -85,80 +85,81 @@ let daemon_main ?directory ?log_level ?first_fcst_time ~error_rcpt_to () =
   in
   let signal_interrupt =
     Deferred.create (fun ivar ->
-        Signal.handle
-          Signal.[ int; term ]
-          ~f:(fun s ->
-            let err = Error.of_string (sprintf !"interrupt: %{Signal}" s) in
-            Log.Global.info !"Signal received: %{Signal}" s;
-            Ivar.fill_if_empty ivar err))
+      Signal.handle
+        Signal.[ int; term ]
+        ~f:(fun s ->
+          let err = Error.of_string (sprintf !"interrupt: %{Signal}" s) in
+          Log.Global.info !"Signal received: %{Signal}" s;
+          Ivar.fill_if_empty ivar err))
   in
   let%bind error =
     Deferred.repeat_until_finished first_fcst_time (fun forecast_time ->
-        let wait_until = Forecast_time.expect_first_file_at forecast_time in
-        if Time.( > ) wait_until (Time.now ())
-        then
-          Log.Global.info
-            !"Waiting until %{Time} before starting %{Forecast_time#yyyymmddhh}"
-            wait_until
-            forecast_time;
-        match%bind
+      let wait_until = Forecast_time.expect_first_file_at forecast_time in
+      if Time.( > ) wait_until (Time.now ())
+      then
+        Log.Global.info
+          !"Waiting until %{Time} before starting %{Forecast_time#yyyymmddhh}"
+          wait_until
+          forecast_time;
+      match%bind
+        choose
+          [ choice (Clock.at wait_until) (fun () -> Ok ())
+          ; choice signal_interrupt (fun e -> Error e)
+          ]
+      with
+      | Error error -> return (`Finished error)
+      | Ok () ->
+        let deadline = Forecast_time.(expect_first_file_at (incr forecast_time)) in
+        Log.Global.info
+          !"Deadline at %{Time} (in %{Time.Span})"
+          deadline
+          (Time.diff deadline (Time.now ()));
+        let interrupt_this = Ivar.create () in
+        let res =
+          Download.download
+            ~interrupt:(Ivar.read interrupt_this)
+            ?directory
+            base_url
+            forecast_time
+        in
+        let%bind res =
           choose
-            [ choice (Clock.at wait_until) (fun () -> Ok ())
-            ; choice signal_interrupt (fun e -> Error e)
+            [ choice res (fun x -> `Res x)
+            ; choice signal_interrupt (fun x -> `Signal_err x)
+            ; choice (Clock.at deadline) (fun () -> `Deadline)
             ]
-        with
-        | Error error -> return (`Finished error)
-        | Ok () ->
-          let deadline = Forecast_time.(expect_first_file_at (incr forecast_time)) in
-          Log.Global.info
-            !"Deadline at %{Time} (in %{Time.Span})"
-            deadline
-            (Time.diff deadline (Time.now ()));
-          let interrupt_this = Ivar.create () in
-          let res =
-            Download.download
-              ~interrupt:(Ivar.read interrupt_this)
-              ?directory
+        in
+        Ivar.fill interrupt_this ();
+        let goto_next_forecast = return (`Repeat (Forecast_time.incr forecast_time)) in
+        (match res with
+        | `Signal_err e -> return (`Finished e)
+        | `Deadline ->
+          let msg =
+            sprintf
+              !"Deadline for %{Forecast_time#yyyymmddhh} reached, skipping"
               forecast_time
           in
-          let%bind res =
-            choose
-              [ choice res (fun x -> `Res x)
-              ; choice signal_interrupt (fun x -> `Signal_err x)
-              ; choice (Clock.at deadline) (fun () -> `Deadline)
-              ]
-          in
-          Ivar.fill interrupt_this ();
-          let goto_next_forecast = return (`Repeat (Forecast_time.incr forecast_time)) in
-          (match res with
-          | `Signal_err e -> return (`Finished e)
-          | `Deadline ->
-            let msg =
-              sprintf
-                !"Deadline for %{Forecast_time#yyyymmddhh} reached, skipping"
-                forecast_time
-            in
-            Log.Global.error "%s" msg;
-            send_mail msg;
-            goto_next_forecast
-          | `Res (Error err) ->
-            Log.Global.error
-              !"%{Forecast_time#yyyymmddhh} failed: %{Error#mach}"
-              forecast_time
-              err;
-            send_mail
-              (sprintf
-                 !"%{Forecast_time#yyyymmddhh} failed\n\n%{Error#hum}"
-                 forecast_time
-                 err);
-            goto_next_forecast
-          | `Res (Ok ()) ->
-            Log.Global.info !"Completed %{Forecast_time#yyyymmddhh}" forecast_time;
-            (match%bind clean_directory ?directory ~keep:forecast_time () with
-            | Error err ->
-              Log.Global.error !"Cleanup failed %{Error#mach}" err;
-              return (`Finished err)
-            | Ok () -> goto_next_forecast)))
+          Log.Global.error "%s" msg;
+          send_mail msg;
+          goto_next_forecast
+        | `Res (Error err) ->
+          Log.Global.error
+            !"%{Forecast_time#yyyymmddhh} failed: %{Error#mach}"
+            forecast_time
+            err;
+          send_mail
+            (sprintf
+               !"%{Forecast_time#yyyymmddhh} failed\n\n%{Error#hum}"
+               forecast_time
+               err);
+          goto_next_forecast
+        | `Res (Ok ()) ->
+          Log.Global.info !"Completed %{Forecast_time#yyyymmddhh}" forecast_time;
+          (match%bind clean_directory ?directory ~keep:forecast_time () with
+          | Error err ->
+            Log.Global.error !"Cleanup failed %{Error#mach}" err;
+            return (`Finished err)
+          | Ok () -> goto_next_forecast)))
   in
   let%bind () = wait_for_mails () in
   let%bind () = Log.Global.flushed () in
@@ -168,16 +169,23 @@ let daemon_main ?directory ?log_level ?first_fcst_time ~error_rcpt_to () =
 type shared_args =
   { log_level : Log.Level.t option
   ; directory : string option
+  ; base_url : Download.Base_url.t
   }
 
 let shared_args =
   let log_level_arg =
     Command.Arg_type.create (fun s ->
-        match String.lowercase s with
-        | "info" -> `Info
-        | "debug" -> `Debug
-        | "error" -> `Error
-        | _ -> failwithf "Invalid log level %s, choose info debug or error" s ())
+      match String.lowercase s with
+      | "info" -> `Info
+      | "debug" -> `Debug
+      | "error" -> `Error
+      | _ -> failwithf "Invalid log level %s, choose info debug or error" s ())
+  and base_url =
+    Command.Arg_type.create (fun s : Download.Base_url.t ->
+      match String.lowercase s with
+      | "nomads" -> Nomads
+      | "aws-mirror" -> Aws_mirror
+      | _ -> failwithf "Bad url %s, choose nomads or aws-mirror" s ())
   in
   [%map_open.Command
     let directory =
@@ -190,8 +198,13 @@ let shared_args =
         "log-level"
         (optional log_level_arg)
         ~doc:"DEBUG|INFO|ERROR (optional) log level"
+    and base_url =
+      flag
+        "base-url"
+        (optional_with_default Download.Base_url.Nomads base_url)
+        ~doc:"nomads|aws-mirror (optional) select where to download from"
     in
-    { directory; log_level }]
+    { directory; log_level; base_url }]
 ;;
 
 let forecast_time_arg =
@@ -203,16 +216,16 @@ let one_cmd =
   Command.async
     ~summary:"Download a specific dataset"
     [%map_open.Command
-      let { log_level; directory } = shared_args
+      let { log_level; directory; base_url } = shared_args
       and forecast_time = anon ("forecast_time" %: forecast_time_arg) in
-      fun () -> one_main ?log_level ?directory forecast_time]
+      fun () -> one_main ?log_level ?directory base_url forecast_time]
 ;;
 
 let daemon_cmd =
   Command.async
     ~summary:"Start the downloader daemon"
     [%map_open.Command
-      let { log_level; directory } = shared_args
+      let { log_level; directory; base_url } = shared_args
       and first_fcst_time =
         flag
           "first-forecast-time"
@@ -224,7 +237,14 @@ let daemon_cmd =
           (listed string)
           ~doc:"mail@domain send error notices to this address"
       in
-      fun () -> daemon_main ?log_level ?directory ?first_fcst_time ~error_rcpt_to ()]
+      fun () ->
+        daemon_main
+          ?log_level
+          ?directory
+          ?first_fcst_time
+          ~error_rcpt_to
+          ~base_url
+          ()]
 ;;
 
 let cmd =
